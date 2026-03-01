@@ -68,6 +68,7 @@ const bgmCurrentName = document.getElementById('bgm-current-name');
 const bgmVolume = document.getElementById('bgm-volume');
 const alarmVolume = document.getElementById('alarm-volume');
 const APP_VERSION = 'v0.1.0';
+const RECURRENCE_SKIP_META_KEY = 'recurrenceSkips';
 
 let todos = [];
 let summaries = [];
@@ -266,6 +267,9 @@ function renderTodos() {
         deletedAt: now,
         updatedAt: now
       });
+      if (todo.recurrenceRuleId != null) {
+        await addRecurrenceSkip(todo.date, Number(todo.recurrenceRuleId));
+      }
       await clearTodoInProgress(todo.uuid);
       triggerChangeSync();
       loadTodos();
@@ -553,6 +557,26 @@ async function loadRecurrenceRules() {
   renderRecurrenceRules();
 }
 
+async function getSkippedRuleIdsForDate(dateStr) {
+  const record = await getMeta(RECURRENCE_SKIP_META_KEY);
+  if (!record || !record.value || typeof record.value !== 'object') return new Set();
+  const ids = record.value[dateStr];
+  if (!Array.isArray(ids)) return new Set();
+  return new Set(ids.map(Number).filter(Number.isFinite));
+}
+
+async function addRecurrenceSkip(dateStr, ruleId) {
+  if (!dateStr || !Number.isFinite(ruleId)) return;
+  const record = await getMeta(RECURRENCE_SKIP_META_KEY);
+  const value = record && record.value && typeof record.value === 'object'
+    ? { ...record.value }
+    : {};
+  const current = Array.isArray(value[dateStr]) ? value[dateStr] : [];
+  if (current.includes(ruleId)) return;
+  value[dateStr] = [...current, ruleId];
+  await setMeta(RECURRENCE_SKIP_META_KEY, value);
+}
+
 function renderRecurrenceRules() {
   if (!recurrenceList) return;
   recurrenceList.innerHTML = '';
@@ -674,6 +698,7 @@ async function ensureRecurrenceForDate(dateStr) {
   if (!isDateOnOrAfter(dateStr, today)) return;
   const rules = (await getAllRecurrenceRules()).filter(rule => !rule.deletedAt);
   if (!rules.length) return;
+  const skippedRuleIds = await getSkippedRuleIdsForDate(dateStr);
   const todosForDate = await getTodosByDate(dateStr);
   const existingRuleIds = new Set(
     todosForDate
@@ -684,6 +709,7 @@ async function ensureRecurrenceForDate(dateStr) {
   let hasChanges = false;
   for (const rule of rules) {
     if (!dateMatchesRule(dateStr, rule)) continue;
+    if (skippedRuleIds.has(rule.id)) continue;
     if (existingRuleIds.has(rule.id)) continue;
     const initResult = syncInitPromise ? await syncInitPromise : null;
     const userId = currentUserId ||
