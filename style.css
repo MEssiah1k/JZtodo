@@ -410,9 +410,12 @@ section {
 .bgm-volume label {
   color: var(--muted);
   font-size: 14px;
+  width: 64px;
+  flex: 0 0 64px;
 }
 
-#bgm-volume {
+#bgm-volume,
+#alarm-volume {
   width: 180px;
 }
 .modal-header {

@@ -225,6 +225,8 @@ export async function syncNow() {
   if (!supabase) return;
   try {
     setStatus('Syncing');
+    if (DEBUG) console.log('[sync] dedupe local todos before push');
+    const dedupedBeforePush = await dedupeLocalTodosByNameAndStatus();
     if (DEBUG) console.log('[sync] push todos');
     await pushLocalTodos();
     if (DEBUG) console.log('[sync] push summaries');
@@ -233,6 +235,14 @@ export async function syncNow() {
     await pushLocalRecurrenceRules();
     if (DEBUG) console.log('[sync] pull');
     const updatedDates = await pullRemoteChanges();
+    if (DEBUG) console.log('[sync] dedupe local todos after pull');
+    const dedupedAfterPull = await dedupeLocalTodosByNameAndStatus();
+    if (dedupedAfterPull.size) {
+      if (DEBUG) console.log('[sync] push deduped todos');
+      await pushLocalTodos();
+    }
+    dedupedBeforePush.forEach(date => updatedDates.add(date));
+    dedupedAfterPull.forEach(date => updatedDates.add(date));
     lastSyncAt = new Date().toISOString();
     await setMeta('lastSyncAt', lastSyncAt);
     setStatus('Idle', `last ${lastSyncAt}`);
@@ -247,11 +257,12 @@ export async function pushLocalTodos() {
   const todos = await getTodosUpdatedAfter(lastSyncAt);
   if (DEBUG) console.log('[sync] todos to push', todos.length);
   if (!todos.length) return;
-  if (todos.length) {
-    const payload = todos.map(mapTodoToRemote);
-    const { error } = await supabase.from('todos').upsert(payload, { onConflict: 'uuid' });
-    if (error) throw error;
-  }
+  const dedupedTodos = dedupeTodosForPush(todos);
+  if (DEBUG) console.log('[sync] todos to push after uuid dedupe', dedupedTodos.length);
+  if (!dedupedTodos.length) return;
+  const payload = dedupedTodos.map(mapTodoToRemote);
+  const { error } = await supabase.from('todos').upsert(payload, { onConflict: 'uuid' });
+  if (error) throw error;
 }
 
 export async function pushLocalSummaries() {
@@ -413,6 +424,71 @@ function shouldUpdateTodo(local, next) {
     (local.updatedAt || '') !== (next.updatedAt || '') ||
     (local.deletedAt || null) !== (next.deletedAt || null)
   );
+}
+
+async function dedupeLocalTodosByNameAndStatus() {
+  const todos = await getAllTodos();
+  const groups = new Map();
+  const updatedDates = new Set();
+  const now = new Date().toISOString();
+
+  for (const todo of todos) {
+    if (!todo || todo.deletedAt) continue;
+    const key = getDedupeKey(todo);
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(todo);
+  }
+
+  for (const group of groups.values()) {
+    if (group.length < 2) continue;
+    group.sort(compareTodoForDedupe);
+    const duplicates = group.slice(1);
+    for (const duplicate of duplicates) {
+      await updateTodo({
+        ...duplicate,
+        deletedAt: now,
+        updatedAt: now
+      });
+      if (duplicate.date) updatedDates.add(duplicate.date);
+    }
+  }
+
+  return updatedDates;
+}
+
+function getDedupeKey(todo) {
+  const date = todo && todo.date ? todo.date : '';
+  const name = todo && typeof todo.text === 'string' ? todo.text.trim() : '';
+  const completed = todo && todo.completed ? '1' : '0';
+  return `${date}__${name}__${completed}`;
+}
+
+function compareTodoForDedupe(a, b) {
+  const aUpdated = a.updatedAt || a.createdAt || '';
+  const bUpdated = b.updatedAt || b.createdAt || '';
+  if (aUpdated !== bUpdated) return bUpdated.localeCompare(aUpdated);
+  const aCreated = a.createdAt || '';
+  const bCreated = b.createdAt || '';
+  if (aCreated !== bCreated) return bCreated.localeCompare(aCreated);
+  return (b.id || 0) - (a.id || 0);
+}
+
+function dedupeTodosForPush(todos) {
+  const byUuid = new Map();
+  const withoutUuid = [];
+
+  for (const todo of todos) {
+    if (!todo || !todo.uuid) {
+      if (todo) withoutUuid.push(todo);
+      continue;
+    }
+    const existing = byUuid.get(todo.uuid);
+    if (!existing || compareTodoForDedupe(todo, existing) < 0) {
+      byUuid.set(todo.uuid, todo);
+    }
+  }
+
+  return [...byUuid.values(), ...withoutUuid];
 }
 
 function isMissingRecurrenceTable(error) {

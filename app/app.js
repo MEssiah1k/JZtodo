@@ -66,6 +66,7 @@ const bgmModal = document.getElementById('bgm-modal');
 const bgmCloseBtn = document.getElementById('bgm-close');
 const bgmCurrentName = document.getElementById('bgm-current-name');
 const bgmVolume = document.getElementById('bgm-volume');
+const alarmVolume = document.getElementById('alarm-volume');
 const APP_VERSION = 'v0.1.0';
 
 let todos = [];
@@ -169,6 +170,7 @@ async function carryOverIncomplete(fromDate, toDate) {
   const fromTodos = await getTodosByDate(fromDate);
   const now = new Date().toISOString();
   let hasChanges = false;
+  const normalizeTodoText = value => (typeof value === 'string' ? value.trim() : '');
 
   for (const todo of fromTodos) {
     if (todo.deletedAt) continue;
@@ -183,6 +185,13 @@ async function carryOverIncomplete(fromDate, toDate) {
       !target.deletedAt && target.carriedFrom === todo.uuid
     );
     if (hasSameCarrySource) continue;
+
+    // 同一天已有同名任务（含日常自动生成）时，不再从昨日续延，避免先出现重复再靠同步清理
+    const nextText = normalizeTodoText(todo.text);
+    const hasSameNameTodo = latestToTodos.some(target =>
+      !target.deletedAt && normalizeTodoText(target.text) === nextText
+    );
+    if (hasSameNameTodo) continue;
 
     // 兜底去重：兼容旧数据或跨端产生的无 carriedFrom 副本
     const hasSameFallbackCopy = latestToTodos.some(target =>
@@ -1042,6 +1051,7 @@ let bellPhase = {
   restEndsAt: 0,
   nextBellAt: 0
 };
+let alarmVolumeRatio = 0.15;
 
 let audioContext = null;
 let lastPersistAt = 0;
@@ -1059,7 +1069,7 @@ function playTone(freq, durationMs) {
     const gain = audioContext.createGain();
     osc.type = 'sine';
     osc.frequency.value = freq;
-    gain.gain.value = 0.15;
+    gain.gain.value = alarmVolumeRatio;
     osc.connect(gain);
     gain.connect(audioContext.destination);
     const now = audioContext.currentTime;
@@ -1068,6 +1078,12 @@ function playTone(freq, durationMs) {
   } catch (err) {
     // 静默降级
   }
+}
+
+function setAlarmVolumePercent(value) {
+  const parsed = Number(value);
+  const safe = Number.isFinite(parsed) ? Math.max(0, Math.min(100, parsed)) : 15;
+  alarmVolumeRatio = safe / 100;
 }
 
 function updateTimerUI(remainingMs) {
@@ -1221,6 +1237,14 @@ if (bgmVolume) {
   });
 }
 
+if (alarmVolume) {
+  setAlarmVolumePercent(alarmVolume.value);
+  alarmVolume.addEventListener('input', () => {
+    setAlarmVolumePercent(alarmVolume.value);
+    setMeta('alarmVolume', Math.round(alarmVolumeRatio * 100));
+  });
+}
+
 if (bgmFileInput) {
   bgmFileInput.addEventListener('change', () => {
     const file = bgmFileInput.files && bgmFileInput.files[0];
@@ -1361,6 +1385,17 @@ async function restoreTimerState() {
 }
 
 restoreTimerState();
+
+async function restoreAlarmVolume() {
+  const record = await getMeta('alarmVolume');
+  if (!record) return;
+  const percent = Number(record.value);
+  if (!Number.isFinite(percent)) return;
+  setAlarmVolumePercent(percent);
+  if (alarmVolume) alarmVolume.value = String(Math.round(alarmVolumeRatio * 100));
+}
+
+restoreAlarmVolume();
 
 // -------- Service Worker --------
 if ('serviceWorker' in navigator) {
