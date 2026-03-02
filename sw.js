@@ -1,4 +1,4 @@
-const CACHE_NAME = 'todo-cache-v31';
+const CACHE_NAME = 'todo-cache-v32';
 const CACHE_PREFIX = 'todo-cache-';
 const CORE_ASSETS = [
   './',
@@ -18,7 +18,11 @@ self.addEventListener('install', event => {
   event.waitUntil(
     (async () => {
       const cache = await caches.open(CACHE_NAME);
-      await cache.addAll(CORE_ASSETS);
+      // Force network revalidation during install so a new worker does not
+      // seed its cache from stale HTTP cache entries.
+      await Promise.all(
+        CORE_ASSETS.map(url => cache.add(new Request(url, { cache: 'reload' })))
+      );
       const clients = await self.clients.matchAll({ type: 'window' });
       if (self.registration.active && clients.length) {
         clients.forEach(client => client.postMessage({ type: 'SW_UPDATE_READY' }));
@@ -50,14 +54,50 @@ self.addEventListener('message', event => {
 
 self.addEventListener('fetch', event => {
   if (event.request.method !== 'GET') return;
+  const requestUrl = new URL(event.request.url);
+  if (requestUrl.origin !== self.location.origin) return;
+
+  if (event.request.mode === 'navigate') {
+    event.respondWith(
+      (async () => {
+        const cache = await caches.open(CACHE_NAME);
+        try {
+          const networkResponse = await fetch(event.request, { cache: 'no-store' });
+          if (networkResponse && networkResponse.ok) {
+            cache.put(event.request, networkResponse.clone());
+          }
+          return networkResponse;
+        } catch (err) {
+          const cached = await cache.match(event.request);
+          if (cached) return cached;
+          return cache.match('./index.html');
+        }
+      })()
+    );
+    return;
+  }
+
   event.respondWith(
-    caches.match(event.request).then(cached => {
-      if (cached) return cached;
-      return fetch(event.request).then(response => {
-        const copy = response.clone();
-        caches.open(CACHE_NAME).then(cache => cache.put(event.request, copy));
-        return response;
-      });
-    })
+    (async () => {
+      const cache = await caches.open(CACHE_NAME);
+      const cached = await cache.match(event.request);
+      const networkPromise = fetch(event.request)
+        .then(response => {
+          if (response && response.ok) {
+            cache.put(event.request, response.clone());
+          }
+          return response;
+        })
+        .catch(() => null);
+
+      if (cached) {
+        void networkPromise;
+        return cached;
+      }
+
+      const networkResponse = await networkPromise;
+      if (networkResponse) return networkResponse;
+      return caches.match(event.request);
+    })()
   );
 });

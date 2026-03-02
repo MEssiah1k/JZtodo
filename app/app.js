@@ -1442,20 +1442,34 @@ restoreAlarmVolume();
 // -------- Service Worker --------
 if ('serviceWorker' in navigator) {
   let swRegistration = null;
-  navigator.serviceWorker.register('./sw.js').then(reg => {
+  const promptForUpdate = () => {
+    const confirmUpdate = window.confirm('发现新版本，是否刷新？');
+    if (!confirmUpdate) return;
+    if (swRegistration && swRegistration.waiting) {
+      swRegistration.waiting.postMessage({ type: 'SKIP_WAITING' });
+      return;
+    }
+    location.reload();
+  };
+
+  navigator.serviceWorker.register('./sw.js', { updateViaCache: 'none' }).then(reg => {
     swRegistration = reg;
+    reg.update();
+    if (reg.waiting) promptForUpdate();
+    reg.addEventListener('updatefound', () => {
+      const installing = reg.installing;
+      if (!installing) return;
+      installing.addEventListener('statechange', () => {
+        if (installing.state === 'installed' && navigator.serviceWorker.controller) {
+          promptForUpdate();
+        }
+      });
+    });
   });
 
   navigator.serviceWorker.addEventListener('message', event => {
     if (event.data && event.data.type === 'SW_UPDATE_READY') {
-      const confirmUpdate = window.confirm('发现新版本，是否刷新？');
-      if (confirmUpdate) {
-        if (swRegistration && swRegistration.waiting) {
-          swRegistration.waiting.postMessage({ type: 'SKIP_WAITING' });
-        } else {
-          location.reload();
-        }
-      }
+      promptForUpdate();
     }
   });
 

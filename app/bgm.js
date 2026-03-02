@@ -5,6 +5,7 @@ let objectUrl = null;
 let userInteracted = false;
 let retryOnNextInteraction = false;
 let volume = 0.6;
+let reloadBeforeNextPlay = false;
 
 function ensureAudio() {
   if (!audio) {
@@ -54,6 +55,7 @@ export function setSource(source) {
   } else if (typeof source === 'string') {
     audio.src = source;
   }
+  reloadBeforeNextPlay = true;
 }
 
 export function setVolume(value) {
@@ -64,9 +66,17 @@ export function setVolume(value) {
 
 export function play() {
   ensureAudio();
+  if (!audio.src) {
+    audio.src = DEFAULT_BGM_SRC;
+  }
   retryOnNextInteraction = true;
   if (!userInteracted) return;
   retryOnNextInteraction = false;
+  if (reloadBeforeNextPlay) {
+    // Ensure the source is decodable again after stop/end transitions.
+    audio.load();
+    reloadBeforeNextPlay = false;
+  }
   safePlay();
 }
 
@@ -77,5 +87,10 @@ export function pause() {
 export function stop() {
   if (!audio) return;
   audio.pause();
-  audio.currentTime = 0;
+  try {
+    audio.currentTime = 0;
+  } catch (err) {
+    // Some browsers can reject seeking before metadata is ready.
+  }
+  reloadBeforeNextPlay = true;
 }
