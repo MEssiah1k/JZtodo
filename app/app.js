@@ -15,7 +15,7 @@ import {
   getTodosByRuleId
 } from './db.js';
 import * as bgm from './bgm.js';
-import { initSync, syncNow, getUserId } from './sync.js';
+import { initSync, syncNow, syncAllLocalToCloud, getUserId } from './sync.js';
 
 const input = document.getElementById('todo-input');
 const dueInput = document.getElementById('todo-due');
@@ -33,6 +33,7 @@ const dateResetBtn = document.getElementById('date-reset');
 const datePicker = document.getElementById('date-picker');
 const dateWeekday = document.getElementById('date-weekday');
 const syncBtn = document.getElementById('sync-btn');
+const syncFullBtn = document.getElementById('sync-full-btn');
 const syncStatus = document.getElementById('sync-status');
 
 const recurrenceOpenBtn = document.getElementById('recurrence-open');
@@ -700,6 +701,12 @@ async function ensureRecurrenceForDate(dateStr) {
   if (!rules.length) return;
   const skippedRuleIds = await getSkippedRuleIdsForDate(dateStr);
   const todosForDate = await getTodosByDate(dateStr);
+  const normalizedNames = new Set(
+    todosForDate
+      .filter(todo => !todo.deletedAt)
+      .map(todo => (typeof todo.text === 'string' ? todo.text.trim() : ''))
+      .filter(Boolean)
+  );
   const existingRuleIds = new Set(
     todosForDate
       .filter(todo => todo.recurrenceRuleId != null)
@@ -711,6 +718,8 @@ async function ensureRecurrenceForDate(dateStr) {
     if (!dateMatchesRule(dateStr, rule)) continue;
     if (skippedRuleIds.has(rule.id)) continue;
     if (existingRuleIds.has(rule.id)) continue;
+    const ruleText = typeof rule.text === 'string' ? rule.text.trim() : '';
+    if (ruleText && normalizedNames.has(ruleText)) continue;
     const initResult = syncInitPromise ? await syncInitPromise : null;
     const userId = currentUserId ||
       (initResult && initResult.userId ? initResult.userId : ensureUserId());
@@ -726,6 +735,7 @@ async function ensureRecurrenceForDate(dateStr) {
       uuid: generateUUID(),
       userId
     });
+    if (ruleText) normalizedNames.add(ruleText);
     hasChanges = true;
   }
   if (hasChanges) triggerChangeSync();
@@ -1330,6 +1340,12 @@ initPromise.then(result => {
 if (syncBtn) {
   syncBtn.addEventListener('click', () => {
     if (syncReady) syncNow();
+  });
+}
+
+if (syncFullBtn) {
+  syncFullBtn.addEventListener('click', () => {
+    if (syncReady) syncAllLocalToCloud();
   });
 }
 

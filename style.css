@@ -704,7 +704,8 @@ section {
   cursor: pointer;
 }
 
-#sync-btn {
+#sync-btn,
+#sync-full-btn {
   padding: 8px 12px;
   border: 1px solid var(--border);
   border-radius: 8px;

@@ -231,8 +231,8 @@ export async function syncNow() {
     await pushLocalTodos();
     if (DEBUG) console.log('[sync] push summaries');
     await pushLocalSummaries();
-    if (DEBUG) console.log('[sync] push recurrence rules');
-    await pushLocalRecurrenceRules();
+    if (DEBUG) console.log('[sync] overwrite recurrence rules (local -> cloud)');
+    await overwriteRemoteRecurrenceRulesFromLocal();
     if (DEBUG) console.log('[sync] pull');
     const updatedDates = await pullRemoteChanges();
     if (DEBUG) console.log('[sync] dedupe local todos after pull');
@@ -249,6 +249,48 @@ export async function syncNow() {
     if (updatedDates.size) updateHandler(updatedDates);
   } catch (err) {
     if (DEBUG) console.log('[sync] error', err);
+    setStatus('Error');
+  }
+}
+
+export async function syncAllLocalToCloud() {
+  if (!supabase) return;
+  try {
+    setStatus('Syncing', 'full push');
+    await normalizeLocalData();
+    if (DEBUG) console.log('[sync] dedupe local todos before full push');
+    const dedupedBeforePush = await dedupeLocalTodosByNameAndStatus();
+
+    const allTodos = await getAllTodos();
+    const dedupedTodos = dedupeTodosForPush(allTodos);
+    if (DEBUG) console.log('[sync] full todos to push', dedupedTodos.length);
+    if (dedupedTodos.length) {
+      const todoPayload = dedupedTodos.map(mapTodoToRemote);
+      const { error: todoError } = await supabase
+        .from('todos')
+        .upsert(todoPayload, { onConflict: 'uuid' });
+      if (todoError) throw todoError;
+    }
+
+    const allSummaries = await getAllSummaries();
+    if (DEBUG) console.log('[sync] full summaries to push', allSummaries.length);
+    if (allSummaries.length) {
+      const summaryPayload = allSummaries.map(mapSummaryToRemote);
+      const { error: summaryError } = await supabase
+        .from('summaries')
+        .upsert(summaryPayload, { onConflict: 'uuid' });
+      if (summaryError) throw summaryError;
+    }
+
+    if (DEBUG) console.log('[sync] overwrite recurrence rules (local -> cloud)');
+    await overwriteRemoteRecurrenceRulesFromLocal();
+
+    lastSyncAt = new Date().toISOString();
+    await setMeta('lastSyncAt', lastSyncAt);
+    setStatus('Idle', `last ${lastSyncAt}`);
+    if (dedupedBeforePush.size) updateHandler(dedupedBeforePush);
+  } catch (err) {
+    if (DEBUG) console.log('[sync] full push error', err);
     setStatus('Error');
   }
 }
@@ -287,6 +329,55 @@ export async function pushLocalRecurrenceRules() {
   if (error) {
     if (isMissingRecurrenceTable(error)) return;
     throw error;
+  }
+}
+
+async function overwriteRemoteRecurrenceRulesFromLocal() {
+  await normalizeLocalData();
+  const localRules = await getAllRecurrenceRules();
+  const localUuids = localRules
+    .map(rule => rule && rule.uuid)
+    .filter(Boolean);
+
+  if (DEBUG) console.log('[sync] local recurrence rules', localRules.length);
+  if (localRules.length) {
+    const payload = localRules.map(mapRecurrenceRuleToRemote);
+    const { error: upsertError } = await supabase
+      .from('recurrence_rules')
+      .upsert(payload, { onConflict: 'uuid' });
+    if (upsertError) {
+      if (isMissingRecurrenceTable(upsertError)) return;
+      throw upsertError;
+    }
+  }
+
+  const { data: remoteRows, error: remoteListError } = await supabase
+    .from('recurrence_rules')
+    .select('uuid');
+  if (remoteListError) {
+    if (isMissingRecurrenceTable(remoteListError)) return;
+    throw remoteListError;
+  }
+
+  const localUuidSet = new Set(localUuids);
+  const remoteOnlyUuids = (remoteRows || [])
+    .map(row => row && row.uuid)
+    .filter(uuid => uuid && !localUuidSet.has(uuid));
+
+  if (!remoteOnlyUuids.length) return;
+  if (DEBUG) console.log('[sync] delete remote-only recurrence rules', remoteOnlyUuids.length);
+
+  const CHUNK_SIZE = 200;
+  for (let i = 0; i < remoteOnlyUuids.length; i += CHUNK_SIZE) {
+    const chunk = remoteOnlyUuids.slice(i, i + CHUNK_SIZE);
+    const { error: deleteError } = await supabase
+      .from('recurrence_rules')
+      .delete()
+      .in('uuid', chunk);
+    if (deleteError) {
+      if (isMissingRecurrenceTable(deleteError)) return;
+      throw deleteError;
+    }
   }
 }
 
@@ -404,6 +495,20 @@ function mergeTodoForPull(local, remote) {
     uuid: local.uuid || remote.uuid
   };
 
+  // 远端表当前不承载这些本地字段，拉取合并时保留本地值，避免被“覆盖为空”
+  if (merged.recurrenceRuleId == null && local.recurrenceRuleId != null) {
+    merged.recurrenceRuleId = local.recurrenceRuleId;
+  }
+  if (merged.dueMinutes == null && local.dueMinutes != null) {
+    merged.dueMinutes = local.dueMinutes;
+  }
+  if (merged.carriedFrom == null && local.carriedFrom != null) {
+    merged.carriedFrom = local.carriedFrom;
+  }
+  if (!merged.userId && local.userId) {
+    merged.userId = local.userId;
+  }
+
   // 冲突时“已完成”优先于“未完成”
   const completedMerged = Boolean(local.completed) || Boolean(remote.completed);
   if (merged.completed !== completedMerged) {
@@ -420,6 +525,10 @@ function shouldUpdateTodo(local, next) {
     local.date !== next.date ||
     local.text !== next.text ||
     Boolean(local.completed) !== Boolean(next.completed) ||
+    (local.recurrenceRuleId ?? null) !== (next.recurrenceRuleId ?? null) ||
+    (local.dueMinutes ?? null) !== (next.dueMinutes ?? null) ||
+    (local.carriedFrom ?? null) !== (next.carriedFrom ?? null) ||
+    (local.userId ?? null) !== (next.userId ?? null) ||
     (local.createdAt || '') !== (next.createdAt || '') ||
     (local.updatedAt || '') !== (next.updatedAt || '') ||
     (local.deletedAt || null) !== (next.deletedAt || null)
