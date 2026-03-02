@@ -1,8 +1,9 @@
-const DEFAULT_BGM_SRC = 'assets/bgm/pinknoise.m4a';
+const DEFAULT_BGM_SRC = new URL('../assets/bgm/pinknoise.m4a', import.meta.url).href;
 
 let audio = null;
 let objectUrl = null;
 let userInteracted = false;
+let retryOnNextInteraction = false;
 let volume = 0.6;
 
 function ensureAudio() {
@@ -18,7 +19,17 @@ function safePlay() {
   if (!audio) return;
   const playPromise = audio.play();
   if (playPromise && typeof playPromise.catch === 'function') {
-    playPromise.catch(() => {});
+    playPromise.catch(() => {
+      retryOnNextInteraction = true;
+    });
+  }
+}
+
+function unlockPlayback() {
+  userInteracted = true;
+  if (retryOnNextInteraction) {
+    retryOnNextInteraction = false;
+    safePlay();
   }
 }
 
@@ -27,9 +38,8 @@ export function init() {
   if (!audio.src) {
     audio.src = DEFAULT_BGM_SRC;
   }
-  window.addEventListener('pointerdown', () => {
-    userInteracted = true;
-  }, { once: true });
+  window.addEventListener('pointerdown', unlockPlayback, { passive: true });
+  window.addEventListener('keydown', unlockPlayback);
 }
 
 export function setSource(source) {
@@ -54,7 +64,9 @@ export function setVolume(value) {
 
 export function play() {
   ensureAudio();
+  retryOnNextInteraction = true;
   if (!userInteracted) return;
+  retryOnNextInteraction = false;
   safePlay();
 }
 
