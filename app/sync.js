@@ -256,6 +256,7 @@ export async function syncAllLocalToCloud() {
   try {
     setStatus('Syncing', 'full push');
     await normalizeLocalData();
+    const fullSyncUpdatedAt = new Date().toISOString();
     if (DEBUG) console.log('[sync] dedupe local todos before full push');
     const dedupedBeforePush = await dedupeLocalTodosByNameAndStatus();
 
@@ -263,7 +264,9 @@ export async function syncAllLocalToCloud() {
     const dedupedTodos = dedupeTodosForPush(allTodos);
     if (DEBUG) console.log('[sync] full todos to push', dedupedTodos.length);
     if (dedupedTodos.length) {
-      const todoPayload = dedupedTodos.map(mapTodoToRemote);
+      const todoPayload = dedupedTodos.map(todo =>
+        mapTodoToRemote({ ...todo, updatedAt: fullSyncUpdatedAt })
+      );
       const { error: todoError } = await supabase
         .from('todos')
         .upsert(todoPayload, { onConflict: 'uuid' });
@@ -273,7 +276,9 @@ export async function syncAllLocalToCloud() {
     const allSummaries = await getAllSummaries();
     if (DEBUG) console.log('[sync] full summaries to push', allSummaries.length);
     if (allSummaries.length) {
-      const summaryPayload = allSummaries.map(mapSummaryToRemote);
+      const summaryPayload = allSummaries.map(summary =>
+        mapSummaryToRemote({ ...summary, updatedAt: fullSyncUpdatedAt })
+      );
       const { error: summaryError } = await supabase
         .from('summaries')
         .upsert(summaryPayload, { onConflict: 'uuid' });
@@ -281,7 +286,7 @@ export async function syncAllLocalToCloud() {
     }
 
     if (DEBUG) console.log('[sync] overwrite recurrence rules (local -> cloud)');
-    await overwriteRemoteRecurrenceRulesFromLocal();
+    await overwriteRemoteRecurrenceRulesFromLocal(fullSyncUpdatedAt);
 
     lastSyncAt = new Date().toISOString();
     await setMeta('lastSyncAt', lastSyncAt);
@@ -330,7 +335,7 @@ export async function pushLocalRecurrenceRules() {
   }
 }
 
-async function overwriteRemoteRecurrenceRulesFromLocal() {
+async function overwriteRemoteRecurrenceRulesFromLocal(forcedUpdatedAt = null) {
   await normalizeLocalData();
   const localRules = await getAllRecurrenceRules();
   const localUuids = localRules
@@ -339,7 +344,11 @@ async function overwriteRemoteRecurrenceRulesFromLocal() {
 
   if (DEBUG) console.log('[sync] local recurrence rules', localRules.length);
   if (localRules.length) {
-    const payload = localRules.map(mapRecurrenceRuleToRemote);
+    const payload = localRules.map(rule =>
+      mapRecurrenceRuleToRemote(
+        forcedUpdatedAt ? { ...rule, updatedAt: forcedUpdatedAt } : rule
+      )
+    );
     const { error: upsertError } = await supabase
       .from('recurrence_rules')
       .upsert(payload, { onConflict: 'uuid' });
