@@ -387,7 +387,13 @@ async function pruneInProgressTodos() {
   const all = await getAllTodos();
   const valid = new Set(
     all
-      .filter(todo => !todo.deletedAt && !todo.completed && todo.uuid)
+      .filter(
+        todo =>
+          !todo.deletedAt &&
+          !todo.completed &&
+          todo.uuid &&
+          todo.date === selectedDate
+      )
       .map(todo => todo.uuid)
   );
   let changed = false;
@@ -418,6 +424,7 @@ async function clearTodoInProgress(uuid) {
 }
 
 async function toggleTodoInProgress(todo) {
+  await pruneInProgressTodos();
   if (!todo || !todo.uuid) {
     setStatus('任务缺少标识，无法设为进行中');
     return false;
