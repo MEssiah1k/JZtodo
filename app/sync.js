@@ -225,23 +225,21 @@ export async function syncNow() {
   if (!supabase) return;
   try {
     setStatus('Syncing');
-    if (DEBUG) console.log('[sync] dedupe local todos before push');
-    const dedupedBeforePush = await dedupeLocalTodosByNameAndStatus();
+
+    // pull first, then push local updates (git-like flow)
+    if (DEBUG) console.log('[sync] pull first');
+    const updatedDates = await pullRemoteChanges();
+
+    if (DEBUG) console.log('[sync] dedupe local todos after pull');
+    const dedupedAfterPull = await dedupeLocalTodosByNameAndStatus();
+
     if (DEBUG) console.log('[sync] push todos');
     await pushLocalTodos();
     if (DEBUG) console.log('[sync] push summaries');
     await pushLocalSummaries();
     if (DEBUG) console.log('[sync] overwrite recurrence rules (local -> cloud)');
     await overwriteRemoteRecurrenceRulesFromLocal();
-    if (DEBUG) console.log('[sync] pull');
-    const updatedDates = await pullRemoteChanges();
-    if (DEBUG) console.log('[sync] dedupe local todos after pull');
-    const dedupedAfterPull = await dedupeLocalTodosByNameAndStatus();
-    if (dedupedAfterPull.size) {
-      if (DEBUG) console.log('[sync] push deduped todos');
-      await pushLocalTodos();
-    }
-    dedupedBeforePush.forEach(date => updatedDates.add(date));
+
     dedupedAfterPull.forEach(date => updatedDates.add(date));
     lastSyncAt = new Date().toISOString();
     await setMeta('lastSyncAt', lastSyncAt);
