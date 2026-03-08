@@ -6,6 +6,24 @@ let userInteracted = false;
 let retryOnNextInteraction = false;
 let volume = 0.6;
 let reloadBeforeNextPlay = false;
+let shouldBePlaying = false;
+let recoveryTimer = null;
+
+function clearRecoveryTimer() {
+  if (!recoveryTimer) return;
+  clearTimeout(recoveryTimer);
+  recoveryTimer = null;
+}
+
+function scheduleRecovery() {
+  if (!audio || !shouldBePlaying || recoveryTimer) return;
+  recoveryTimer = setTimeout(() => {
+    recoveryTimer = null;
+    if (!audio || !shouldBePlaying) return;
+    reloadBeforeNextPlay = true;
+    play();
+  }, 200);
+}
 
 function ensureAudio() {
   if (!audio) {
@@ -13,6 +31,17 @@ function ensureAudio() {
     audio.loop = true;
     audio.preload = 'none';
     audio.volume = volume;
+    audio.addEventListener('ended', () => {
+      if (!shouldBePlaying) return;
+      scheduleRecovery();
+    });
+    audio.addEventListener('pause', () => {
+      if (!shouldBePlaying) return;
+      scheduleRecovery();
+    });
+    audio.addEventListener('stalled', scheduleRecovery);
+    audio.addEventListener('error', scheduleRecovery);
+    audio.addEventListener('emptied', scheduleRecovery);
   }
 }
 
@@ -28,9 +57,9 @@ function safePlay() {
 
 function unlockPlayback() {
   userInteracted = true;
-  if (retryOnNextInteraction) {
+  if (retryOnNextInteraction && shouldBePlaying) {
     retryOnNextInteraction = false;
-    safePlay();
+    play();
   }
 }
 
@@ -69,23 +98,29 @@ export function play() {
   if (!audio.src) {
     audio.src = DEFAULT_BGM_SRC;
   }
+  shouldBePlaying = true;
   retryOnNextInteraction = true;
   if (!userInteracted) return;
   retryOnNextInteraction = false;
-  if (reloadBeforeNextPlay) {
+  if (reloadBeforeNextPlay || audio.ended || Boolean(audio.error)) {
     // Ensure the source is decodable again after stop/end transitions.
     audio.load();
     reloadBeforeNextPlay = false;
   }
+  clearRecoveryTimer();
   safePlay();
 }
 
 export function pause() {
+  shouldBePlaying = false;
+  clearRecoveryTimer();
   if (audio) audio.pause();
 }
 
 export function stop() {
   if (!audio) return;
+  shouldBePlaying = false;
+  clearRecoveryTimer();
   audio.pause();
   try {
     audio.currentTime = 0;
