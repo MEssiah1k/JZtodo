@@ -1431,6 +1431,9 @@ async function restoreTimerState() {
   if (timerRunning && !timerInterval) {
     timerInterval = setInterval(tickTimer, 500);
   }
+  if (timerRunning) {
+    bgm.play();
+  }
 }
 
 restoreTimerState();

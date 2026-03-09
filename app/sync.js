@@ -410,10 +410,7 @@ export async function pullRemoteChanges() {
     }
   }
 
-  const { data: todoRows } = await supabase
-    .from('todos')
-    .select('*')
-    .gt('updated_at', lastSyncAt);
+  const todoRows = await fetchAllRows('todos');
   if (DEBUG) console.log('[sync] pull todos', todoRows ? todoRows.length : 0);
   if (Array.isArray(todoRows)) {
     for (const row of todoRows) {
@@ -440,10 +437,7 @@ export async function pullRemoteChanges() {
     }
   }
 
-  const { data: summaryRows } = await supabase
-    .from('summaries')
-    .select('*')
-    .gt('updated_at', lastSyncAt);
+  const summaryRows = await fetchAllRows('summaries');
   if (DEBUG) console.log('[sync] pull summaries', summaryRows ? summaryRows.length : 0);
   if (Array.isArray(summaryRows)) {
     for (const row of summaryRows) {
@@ -461,10 +455,7 @@ export async function pullRemoteChanges() {
     }
   }
 
-  const { data: ruleRows, error: rulePullError } = await supabase
-    .from('recurrence_rules')
-    .select('*')
-    .gt('updated_at', lastSyncAt);
+  const { data: ruleRows, error: rulePullError } = await fetchAllRowsWithError('recurrence_rules');
   if (rulePullError) {
     if (!isMissingRecurrenceTable(rulePullError)) throw rulePullError;
   } else if (Array.isArray(ruleRows)) {
@@ -482,6 +473,33 @@ export async function pullRemoteChanges() {
     }
   }
   return updatedDates;
+}
+
+async function fetchAllRows(table) {
+  const { data, error } = await fetchAllRowsWithError(table);
+  if (error) throw error;
+  return data;
+}
+
+async function fetchAllRowsWithError(table) {
+  const PAGE_SIZE = 1000;
+  const rows = [];
+  let offset = 0;
+
+  while (true) {
+    const { data, error } = await supabase
+      .from(table)
+      .select('*')
+      .order('updated_at', { ascending: true })
+      .range(offset, offset + PAGE_SIZE - 1);
+    if (error) return { data: null, error };
+    if (!Array.isArray(data) || !data.length) break;
+    rows.push(...data);
+    if (data.length < PAGE_SIZE) break;
+    offset += PAGE_SIZE;
+  }
+
+  return { data: rows, error: null };
 }
 
 function getTodoFingerprint(todo) {
