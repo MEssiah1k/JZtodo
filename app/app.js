@@ -3,6 +3,7 @@ import {
   getTodosByDate,
   addTodo,
   updateTodo,
+  getAllSummaries,
   getSummariesByDate,
   addSummary,
   updateSummary,
@@ -26,6 +27,9 @@ const status = document.getElementById('status');
 const summaryInput = document.getElementById('summary-input');
 const summaryStatus = document.getElementById('summary-status');
 const summaryRating = document.getElementById('summary-rating');
+const summaryModule = document.getElementById('summary-module');
+const contributionChart = document.getElementById('contribution-chart');
+const contributionSummary = document.getElementById('contribution-summary');
 
 const datePrevBtn = document.getElementById('date-prev');
 const dateNextBtn = document.getElementById('date-next');
@@ -70,6 +74,7 @@ const bgmVolume = document.getElementById('bgm-volume');
 const alarmVolume = document.getElementById('alarm-volume');
 const APP_VERSION = 'v0.1.0';
 const RECURRENCE_SKIP_META_KEY = 'recurrenceSkips';
+const CONTRIBUTION_DAYS = 183;
 
 let todos = [];
 let summaries = [];
@@ -82,6 +87,8 @@ let inProgressTodos = new Map();
 let restoreInProgressPromise = null;
 const runningTimeEls = new Map();
 let runningTicker = null;
+let contributionScores = new Map();
+let contributionResizeRaf = 0;
 
 // -------- Date helpers --------
 function formatDateLocal(date) {
@@ -96,7 +103,57 @@ function parseDateLocal(dateStr) {
   return new Date(y, m - 1, d);
 }
 
-function setSelectedDate(dateStr) {
+function shiftDate(date, days) {
+  const next = new Date(date);
+  next.setDate(next.getDate() + days);
+  return next;
+}
+
+function startOfWeekMonday(date) {
+  const next = new Date(date);
+  const weekday = (next.getDay() + 6) % 7;
+  next.setDate(next.getDate() - weekday);
+  return next;
+}
+
+function formatMonthShort(date) {
+  return date.toLocaleDateString('en-US', { month: 'short' });
+}
+
+function formatTooltipDate(dateStr) {
+  return parseDateLocal(dateStr).toLocaleDateString('zh-CN', {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric'
+  });
+}
+
+function updateContributionCellSize(wrapper) {
+  if (!wrapper || !contributionChart) return;
+  const weekCount = Number(wrapper.style.getPropertyValue('--weeks'));
+  if (!Number.isFinite(weekCount) || weekCount <= 0) return;
+  const styles = getComputedStyle(wrapper);
+  const labelWidth = parseFloat(styles.getPropertyValue('--contrib-label-width')) || 24;
+  const gap = parseFloat(styles.getPropertyValue('--contrib-gap')) || 2;
+  const gridGap = parseFloat(styles.gap) || 6;
+  const chartWidth = contributionChart.clientWidth;
+  const cellsWidth = Math.max(0, chartWidth - labelWidth - gridGap);
+  const size = Math.max(10, Math.floor((cellsWidth - gap * (weekCount - 1)) / weekCount));
+  wrapper.style.setProperty('--contrib-cell-size', `${size}px`);
+}
+
+function pinSummaryToBottom() {
+  if (!summaryModule) return;
+  summaryModule.scrollIntoView({ block: 'end' });
+}
+
+function schedulePinSummaryToBottom() {
+  requestAnimationFrame(() => {
+    requestAnimationFrame(pinSummaryToBottom);
+  });
+}
+
+async function setSelectedDate(dateStr, options = {}) {
   const previousDate = selectedDate;
   selectedDate = dateStr;
   if (datePicker) datePicker.value = dateStr;
@@ -110,12 +167,16 @@ function setSelectedDate(dateStr) {
     const today = formatDateLocal(new Date());
     const yesterday = formatDateLocal(new Date(Date.now() - 86400000));
     if (previousDate === yesterday && dateStr === today) {
-      carryOverIncomplete(previousDate, dateStr).then(loadForDate);
-      return;
+      await carryOverIncomplete(previousDate, dateStr);
+      await loadForDate();
+    } else {
+      await loadForDate();
     }
-    loadForDate();
   } else {
-    loadForDate();
+    await loadForDate();
+  }
+  if (options.keepSummaryBottom) {
+    schedulePinSummaryToBottom();
   }
 }
 
@@ -557,7 +618,151 @@ async function loadSummaries() {
   summaryRatingValue = latest && typeof latest.rating === 'number' ? latest.rating : 0;
   renderSummaryRating();
   autoResizeSummary();
+  await renderContributionChart();
 }
+
+async function renderContributionChart() {
+  if (!contributionChart) return;
+  const allSummaries = await getAllSummaries();
+  const latestByDate = new Map();
+
+  allSummaries
+    .filter(summary => !summary.deletedAt)
+    .sort((a, b) => {
+      const aTime = Date.parse(a.updatedAt || a.createdAt || 0);
+      const bTime = Date.parse(b.updatedAt || b.createdAt || 0);
+      return bTime - aTime;
+    })
+    .forEach(summary => {
+      if (!summary.date || latestByDate.has(summary.date)) return;
+      const rawRating = typeof summary.rating === 'number' ? summary.rating : 0;
+      const level = Math.max(0, Math.min(10, Math.round(rawRating * 2)));
+      latestByDate.set(summary.date, level);
+    });
+
+  contributionScores = latestByDate;
+
+  const today = new Date();
+  const endDate = parseDateLocal(formatDateLocal(today));
+  const firstDate = shiftDate(endDate, -(CONTRIBUTION_DAYS - 1));
+  const gridStart = startOfWeekMonday(firstDate);
+  const diffDays = Math.round((endDate - gridStart) / 86400000);
+  const totalDays = diffDays + 1;
+  const weekCount = Math.ceil(totalDays / 7);
+
+  const wrapper = document.createElement('div');
+  wrapper.className = 'contribution-grid';
+  wrapper.style.setProperty('--weeks', String(weekCount));
+
+  const months = document.createElement('div');
+  months.className = 'contribution-months';
+  for (let week = 0; week < weekCount; week += 1) {
+    const monthLabel = document.createElement('span');
+    monthLabel.className = 'contribution-month';
+    const columnDate = shiftDate(gridStart, week * 7);
+    if (week === 0 || columnDate.getDate() <= 7) {
+      monthLabel.textContent = formatMonthShort(columnDate);
+    }
+    monthLabel.style.gridColumn = String(week + 1);
+    months.appendChild(monthLabel);
+  }
+
+  const weekdays = document.createElement('div');
+  weekdays.className = 'contribution-weekdays';
+  ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].forEach(label => {
+    const item = document.createElement('span');
+    item.textContent = label;
+    weekdays.appendChild(item);
+  });
+
+  const cells = document.createElement('div');
+  cells.className = 'contribution-cells';
+  const tooltip = document.createElement('div');
+  tooltip.className = 'contribution-tooltip';
+  tooltip.setAttribute('role', 'status');
+  tooltip.setAttribute('aria-live', 'polite');
+
+  let ratedDays = 0;
+  let ratingTotal = 0;
+
+  const hideTooltip = () => {
+    tooltip.classList.remove('is-visible');
+  };
+
+  const showTooltip = (button, label) => {
+    const chartRect = contributionChart.getBoundingClientRect();
+    const buttonRect = button.getBoundingClientRect();
+    tooltip.textContent = label;
+    tooltip.classList.add('is-visible');
+    const tooltipWidth = tooltip.offsetWidth;
+    const tooltipHeight = tooltip.offsetHeight;
+    const sideOffset = 12;
+    const verticalOffset = 10;
+    const rightLeft = buttonRect.right - chartRect.left + sideOffset;
+    const leftLeft = buttonRect.left - chartRect.left - tooltipWidth - sideOffset;
+    const maxLeft = Math.max(4, chartRect.width - tooltipWidth - 4);
+    const left = rightLeft <= maxLeft ? rightLeft : Math.max(4, leftLeft);
+    const belowTop = buttonRect.bottom - chartRect.top + verticalOffset;
+    const aboveTop = buttonRect.top - chartRect.top - tooltipHeight - verticalOffset;
+    const maxTop = Math.max(4, chartRect.height - tooltipHeight - 4);
+    const top = belowTop <= maxTop ? belowTop : Math.max(4, aboveTop);
+    tooltip.style.left = `${left}px`;
+    tooltip.style.top = `${top}px`;
+  };
+
+  for (let week = 0; week < weekCount; week += 1) {
+    for (let day = 0; day < 7; day += 1) {
+      const cellDate = shiftDate(gridStart, week * 7 + day);
+      if (cellDate > endDate) continue;
+      const dateStr = formatDateLocal(cellDate);
+      const level = contributionScores.get(dateStr) ?? 0;
+      if (cellDate >= firstDate && level > 0) {
+        ratedDays += 1;
+        ratingTotal += level;
+      }
+
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'contribution-cell';
+      button.dataset.level = String(level);
+      if (dateStr === selectedDate) button.classList.add('is-selected');
+      const tooltipLabel = `${formatTooltipDate(dateStr)}：专注${level}次`;
+      button.setAttribute('aria-label', tooltipLabel);
+      button.addEventListener('mouseenter', () => {
+        showTooltip(button, tooltipLabel);
+      });
+      button.addEventListener('focus', () => {
+        showTooltip(button, tooltipLabel);
+      });
+      button.addEventListener('mouseleave', hideTooltip);
+      button.addEventListener('blur', hideTooltip);
+      button.addEventListener('click', () => {
+        void setSelectedDate(dateStr, { keepSummaryBottom: true });
+      });
+      cells.appendChild(button);
+    }
+  }
+
+  wrapper.appendChild(months);
+  wrapper.appendChild(weekdays);
+  wrapper.appendChild(cells);
+  contributionChart.replaceChildren(wrapper, tooltip);
+  updateContributionCellSize(wrapper);
+
+  if (contributionSummary) {
+    const average = ratedDays ? (ratingTotal / ratedDays).toFixed(1) : '0.0';
+    contributionSummary.textContent = `过去半年专注了${ratingTotal}次，平均 ${average} / 10`;
+  }
+}
+
+window.addEventListener('resize', () => {
+  if (contributionResizeRaf) cancelAnimationFrame(contributionResizeRaf);
+  contributionResizeRaf = requestAnimationFrame(() => {
+    contributionResizeRaf = 0;
+    const wrapper = contributionChart?.querySelector('.contribution-grid');
+    updateContributionCellSize(wrapper);
+  });
+});
 
 // -------- Recurrence rules --------
 async function loadRecurrenceRules() {
@@ -1047,9 +1252,8 @@ summaryInput.addEventListener('input', () => {
 });
 
 // -------- Date module --------
-function loadForDate() {
-  loadTodos();
-  loadSummaries();
+async function loadForDate() {
+  await Promise.all([loadTodos(), loadSummaries()]);
 }
 
 if (datePrevBtn) {
