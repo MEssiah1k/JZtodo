@@ -296,11 +296,6 @@ h2 {
   outline: none;
 }
 
-.contribution-cell.is-selected {
-  border-color: var(--text);
-  box-shadow: 0 0 0 1px var(--card), 0 3px 8px rgba(15, 23, 42, 0.12);
-}
-
 .contribution-cell.is-outside {
   border-color: transparent;
   background: transparent;

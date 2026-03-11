@@ -799,7 +799,6 @@ async function renderContributionChart() {
       button.type = 'button';
       button.className = 'contribution-cell';
       button.dataset.level = String(level);
-      if (dateStr === selectedDate) button.classList.add('is-selected');
       const tooltipLabel = `${formatTooltipDate(dateStr)}：专注${level}次`;
       button.setAttribute('aria-label', tooltipLabel);
       button.addEventListener('mouseenter', () => {
