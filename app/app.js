@@ -1771,7 +1771,7 @@ if ('serviceWorker' in navigator) {
     location.reload();
   };
 
-  navigator.serviceWorker.register('./sw.js?v=20260311-heatmap-fix', { updateViaCache: 'none' }).then(reg => {
+  navigator.serviceWorker.register('./sw.js?v=20260311-timer-lock', { updateViaCache: 'none' }).then(reg => {
     swRegistration = reg;
     reg.update();
     if (reg.waiting) promptForUpdate();
