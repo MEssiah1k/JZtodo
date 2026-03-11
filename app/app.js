@@ -75,6 +75,9 @@ const alarmVolume = document.getElementById('alarm-volume');
 const APP_VERSION = 'v0.1.1';
 const RECURRENCE_SKIP_META_KEY = 'recurrenceSkips';
 const CONTRIBUTION_DAYS = 183;
+const TIMER_LEASE_KEY = 'pwaTodo.timerLease';
+const TIMER_LEASE_TTL_MS = 4000;
+const TIMER_LEASE_HEARTBEAT_MS = 2000;
 
 let todos = [];
 let summaries = [];
@@ -89,6 +92,7 @@ const runningTimeEls = new Map();
 let runningTicker = null;
 let contributionScores = new Map();
 let contributionResizeRaf = 0;
+const timerInstanceId = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 
 // -------- Date helpers --------
 function formatDateLocal(date) {
@@ -1302,6 +1306,88 @@ let alarmVolumeRatio = 0.15;
 
 let audioContext = null;
 let lastPersistAt = 0;
+let ownsTimerLease = false;
+let timerLeaseInterval = null;
+
+function readTimerLease() {
+  try {
+    const raw = window.localStorage.getItem(TIMER_LEASE_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch (err) {
+    return null;
+  }
+}
+
+function writeTimerLease(now = Date.now()) {
+  try {
+    window.localStorage.setItem(TIMER_LEASE_KEY, JSON.stringify({
+      ownerId: timerInstanceId,
+      expiresAt: now + TIMER_LEASE_TTL_MS
+    }));
+    ownsTimerLease = true;
+  } catch (err) {
+    ownsTimerLease = true;
+  }
+}
+
+function clearTimerTicking() {
+  if (!timerInterval) return;
+  clearInterval(timerInterval);
+  timerInterval = null;
+}
+
+function ensureTimerTicking() {
+  if (timerInterval) return;
+  timerInterval = setInterval(tickTimer, 500);
+}
+
+function claimTimerLease() {
+  const now = Date.now();
+  const lease = readTimerLease();
+  if (lease && lease.ownerId !== timerInstanceId && lease.expiresAt > now) {
+    ownsTimerLease = false;
+    return false;
+  }
+  writeTimerLease(now);
+  return true;
+}
+
+function releaseTimerLease() {
+  const lease = readTimerLease();
+  if (lease && lease.ownerId === timerInstanceId) {
+    try {
+      window.localStorage.removeItem(TIMER_LEASE_KEY);
+    } catch (err) {
+      // ignore
+    }
+  }
+  ownsTimerLease = false;
+}
+
+function updateTimerLease() {
+  const wasOwner = ownsTimerLease;
+  if (!timerRunning) {
+    releaseTimerLease();
+    clearTimerTicking();
+    return;
+  }
+  if (claimTimerLease()) {
+    ensureTimerTicking();
+    if (!wasOwner) {
+      bgm.play();
+      tickTimer();
+    }
+    return;
+  }
+  clearTimerTicking();
+  bgm.pause();
+  setTimerStatus('倒计时已在另一页面运行');
+}
+
+function ensureTimerLeaseLoop() {
+  if (timerLeaseInterval) return;
+  timerLeaseInterval = setInterval(updateTimerLease, TIMER_LEASE_HEARTBEAT_MS);
+}
 
 function randomBellSeconds() {
   return 180 + Math.floor(Math.random() * 121);
@@ -1357,7 +1443,7 @@ function resetBellSchedule(now) {
 }
 
 function tickTimer() {
-  if (!timerRunning) return;
+  if (!timerRunning || !ownsTimerLease) return;
   const now = Date.now();
   const remainingMs = Math.max(0, timerRemainingMs - (now - timerStartAt));
   updateTimerUI(remainingMs);
@@ -1373,6 +1459,8 @@ function tickTimer() {
     updateToggleLabel();
     persistTimerState();
     bgm.stop();
+    releaseTimerLease();
+    clearTimerTicking();
     return;
   }
 
@@ -1411,11 +1499,11 @@ function startTimer() {
   resetBellSchedule(Date.now());
   updateToggleLabel();
   persistTimerState();
-  bgm.play();
-  if (!timerInterval) {
-    timerInterval = setInterval(tickTimer, 500);
+  updateTimerLease();
+  if (ownsTimerLease) {
+    bgm.play();
+    tickTimer();
   }
-  tickTimer();
 }
 
 function pauseTimer() {
@@ -1428,6 +1516,8 @@ function pauseTimer() {
   updateToggleLabel();
   persistTimerState();
   bgm.pause();
+  releaseTimerLease();
+  clearTimerTicking();
 }
 
 function stopTimer() {
@@ -1438,6 +1528,8 @@ function stopTimer() {
   updateToggleLabel();
   persistTimerState();
   bgm.stop();
+  releaseTimerLease();
+  clearTimerTicking();
 }
 
 function applyTimerMinutes(value) {
@@ -1454,6 +1546,8 @@ function applyTimerMinutes(value) {
   updateToggleLabel();
   persistTimerState();
   bgm.stop();
+  releaseTimerLease();
+  clearTimerTicking();
 }
 
 if (timerMinutesInput) {
@@ -1476,6 +1570,17 @@ setTimerStatus('未开始');
 if (timerVersionEl) timerVersionEl.textContent = `版本 ${APP_VERSION}`;
 updateToggleLabel();
 bgm.init();
+ensureTimerLeaseLoop();
+window.addEventListener('storage', event => {
+  if (event.key !== TIMER_LEASE_KEY) return;
+  updateTimerLease();
+});
+window.addEventListener('visibilitychange', () => {
+  if (!document.hidden) updateTimerLease();
+});
+window.addEventListener('pagehide', () => {
+  if (ownsTimerLease) releaseTimerLease();
+});
 if (bgmCurrentName) bgmCurrentName.textContent = bgmName;
 if (bgmVolume) {
   bgm.setVolume(bgmVolume.value / 100);
@@ -1632,11 +1737,11 @@ async function restoreTimerState() {
 
   updateTimerUI(timerRemainingMs);
   updateToggleLabel();
-  if (timerRunning && !timerInterval) {
-    timerInterval = setInterval(tickTimer, 500);
-  }
   if (timerRunning) {
-    bgm.play();
+    updateTimerLease();
+    if (ownsTimerLease) {
+      bgm.play();
+    }
   }
 }
 
