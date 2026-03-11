@@ -72,7 +72,7 @@ const bgmCloseBtn = document.getElementById('bgm-close');
 const bgmCurrentName = document.getElementById('bgm-current-name');
 const bgmVolume = document.getElementById('bgm-volume');
 const alarmVolume = document.getElementById('alarm-volume');
-const APP_VERSION = 'v0.1.0';
+const APP_VERSION = 'v0.1.1';
 const RECURRENCE_SKIP_META_KEY = 'recurrenceSkips';
 const CONTRIBUTION_DAYS = 183;
 
@@ -1666,7 +1666,7 @@ if ('serviceWorker' in navigator) {
     location.reload();
   };
 
-  navigator.serviceWorker.register('./sw.js', { updateViaCache: 'none' }).then(reg => {
+  navigator.serviceWorker.register('./sw.js?v=20260311-heatmap-fix', { updateViaCache: 'none' }).then(reg => {
     swRegistration = reg;
     reg.update();
     if (reg.waiting) promptForUpdate();

@@ -8,6 +8,7 @@ let volume = 0.6;
 let reloadBeforeNextPlay = false;
 let shouldBePlaying = false;
 let recoveryTimer = null;
+let unlockBound = false;
 
 function clearRecoveryTimer() {
   if (!recoveryTimer) return;
@@ -68,7 +69,11 @@ export function init() {
   if (!audio.src) {
     audio.src = DEFAULT_BGM_SRC;
   }
+  if (unlockBound) return;
+  unlockBound = true;
   window.addEventListener('pointerdown', unlockPlayback, { passive: true });
+  window.addEventListener('touchend', unlockPlayback, { passive: true });
+  window.addEventListener('click', unlockPlayback, { passive: true });
   window.addEventListener('keydown', unlockPlayback);
 }
 
@@ -100,14 +105,19 @@ export function play() {
   }
   shouldBePlaying = true;
   retryOnNextInteraction = true;
-  if (!userInteracted) return;
-  retryOnNextInteraction = false;
   if (reloadBeforeNextPlay || audio.ended || Boolean(audio.error)) {
     // Ensure the source is decodable again after stop/end transitions.
     audio.load();
     reloadBeforeNextPlay = false;
   }
   clearRecoveryTimer();
+  if (!userInteracted) {
+    // Some mobile/PWA environments do not fire pointerdown as expected,
+    // but a direct play attempt inside the click handler can still succeed.
+    safePlay();
+    return;
+  }
+  retryOnNextInteraction = false;
   safePlay();
 }
 
