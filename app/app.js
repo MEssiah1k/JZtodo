@@ -22,6 +22,8 @@ const input = document.getElementById('todo-input');
 const dueInput = document.getElementById('todo-due');
 const addBtn = document.getElementById('add-btn');
 const list = document.getElementById('todo-list');
+const completedList = document.getElementById('completed-list');
+const completedModule = document.getElementById('completed-module');
 const status = document.getElementById('status');
 
 const summaryInput = document.getElementById('summary-input');
@@ -152,7 +154,7 @@ function formatContributionHalfLabel(period) {
 }
 
 function formatContributionHalfTitle(period) {
-  return `${period.year}${period.half === 1 ? '上' : '下'}半年评分热力图`;
+  return `${period.year}${period.half === 1 ? '上' : '下'}半年热力图`;
 }
 
 function getContributionHalfRange(period) {
@@ -190,14 +192,15 @@ function updateContributionCellSize(wrapper) {
   wrapper.style.setProperty('--contrib-cell-size', `${size}px`);
 }
 
-function pinSummaryToBottom() {
-  if (!summaryModule) return;
-  summaryModule.scrollIntoView({ block: 'end' });
+function pinContributionToTop() {
+  const target = contributionChart?.closest('.contribution-card') || summaryModule;
+  if (!target) return;
+  target.scrollIntoView({ block: 'start' });
 }
 
-function schedulePinSummaryToBottom() {
+function schedulePinContributionToTop() {
   requestAnimationFrame(() => {
-    requestAnimationFrame(pinSummaryToBottom);
+    requestAnimationFrame(pinContributionToTop);
   });
 }
 
@@ -223,8 +226,8 @@ async function setSelectedDate(dateStr, options = {}) {
   } else {
     await loadForDate();
   }
-  if (options.keepSummaryBottom) {
-    schedulePinSummaryToBottom();
+  if (options.keepContributionVisible) {
+    schedulePinContributionToTop();
   }
 }
 
@@ -336,17 +339,26 @@ async function carryOverIncomplete(fromDate, toDate) {
 
 function renderTodos() {
   list.innerHTML = '';
+  if (completedList) completedList.innerHTML = '';
   runningTimeEls.clear();
   const visibleTodos = todos
-    .filter(todo => !todo.deletedAt)
+    .filter(todo => !todo.deletedAt);
+  const pendingTodos = visibleTodos
+    .filter(todo => !todo.completed)
     .sort((a, b) => {
-      if (a.completed !== b.completed) return a.completed ? 1 : -1;
+      const aTime = Date.parse(a.updatedAt || a.createdAt || 0);
+      const bTime = Date.parse(b.updatedAt || b.createdAt || 0);
+      return bTime - aTime;
+    });
+  const doneTodos = visibleTodos
+    .filter(todo => todo.completed)
+    .sort((a, b) => {
       const aTime = Date.parse(a.updatedAt || a.createdAt || 0);
       const bTime = Date.parse(b.updatedAt || b.createdAt || 0);
       return bTime - aTime;
     });
 
-  visibleTodos.forEach(todo => {
+  const renderTodoItem = (todo, targetList) => {
     const li = document.createElement('li');
     li.className = todo.completed ? 'completed' : '';
     if (isTodoInProgress(todo)) li.classList.add('in-progress');
@@ -430,8 +442,16 @@ function renderTodos() {
       triggerChangeSync();
       loadTodos();
     };
-    list.appendChild(li);
-  });
+    targetList.appendChild(li);
+  };
+
+  pendingTodos.forEach(todo => renderTodoItem(todo, list));
+  if (completedList) {
+    doneTodos.forEach(todo => renderTodoItem(todo, completedList));
+  }
+  if (completedModule) {
+    completedModule.classList.toggle('hidden', doneTodos.length === 0);
+  }
 }
 
 function isTodoInProgress(todo) {
@@ -811,7 +831,7 @@ async function renderContributionChart() {
       button.addEventListener('mouseleave', hideTooltip);
       button.addEventListener('blur', hideTooltip);
       button.addEventListener('click', () => {
-        void setSelectedDate(dateStr, { keepSummaryBottom: true });
+        void setSelectedDate(dateStr, { keepContributionVisible: true });
       });
       cells.appendChild(button);
     }
@@ -1872,7 +1892,7 @@ if ('serviceWorker' in navigator) {
     location.reload();
   };
 
-  navigator.serviceWorker.register('./sw.js?v=20260311-sync-wrap-group', { updateViaCache: 'none' }).then(reg => {
+  navigator.serviceWorker.register('./sw.js?v=20260311-contrib-title', { updateViaCache: 'none' }).then(reg => {
     swRegistration = reg;
     reg.update();
     if (reg.waiting) promptForUpdate();

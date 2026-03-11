@@ -450,13 +450,15 @@ section {
   min-height: 20px;
 }
 
-#todo-list {
+#todo-list,
+#completed-list {
   list-style: none;
   padding: 0;
   margin-top: 0.1px;
 }
 
-#todo-list li {
+#todo-list li,
+#completed-list li {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
@@ -469,13 +471,15 @@ section {
   background: var(--todo);
 }
 
-#todo-list li.in-progress {
+#todo-list li.in-progress,
+#completed-list li.in-progress {
   background: var(--todo-active);
   border-color: var(--todo-active-border);
   box-shadow: 0 0 0 2px var(--todo-active-glow);
 }
 
-#todo-list li.completed {
+#todo-list li.completed,
+#completed-list li.completed {
   text-decoration: line-through;
   opacity: 0.6;
 }
@@ -562,9 +566,17 @@ section {
 #todo-list li:hover .delete-btn,
 #todo-list li:hover .progress-btn,
 #todo-list li:focus-within .delete-btn,
-#todo-list li:focus-within .progress-btn {
+#todo-list li:focus-within .progress-btn,
+#completed-list li:hover .delete-btn,
+#completed-list li:hover .progress-btn,
+#completed-list li:focus-within .delete-btn,
+#completed-list li:focus-within .progress-btn {
   opacity: 1;
   pointer-events: auto;
+}
+
+.completed-module {
+  margin-top: 18px;
 }
 
 /* Modal */
