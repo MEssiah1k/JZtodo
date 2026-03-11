@@ -9,6 +9,7 @@ let reloadBeforeNextPlay = false;
 let shouldBePlaying = false;
 let recoveryTimer = null;
 let unlockBound = false;
+let waitingForCanPlay = false;
 
 function clearRecoveryTimer() {
   if (!recoveryTimer) return;
@@ -30,7 +31,7 @@ function ensureAudio() {
   if (!audio) {
     audio = new Audio();
     audio.loop = true;
-    audio.preload = 'none';
+    audio.preload = 'auto';
     audio.volume = volume;
     audio.addEventListener('ended', () => {
       if (!shouldBePlaying) return;
@@ -56,6 +57,16 @@ function safePlay() {
   }
 }
 
+function schedulePlayWhenReady() {
+  if (!audio || waitingForCanPlay) return;
+  waitingForCanPlay = true;
+  audio.addEventListener('canplay', () => {
+    waitingForCanPlay = false;
+    if (!audio || !shouldBePlaying) return;
+    safePlay();
+  }, { once: true });
+}
+
 function unlockPlayback() {
   userInteracted = true;
   if (retryOnNextInteraction && shouldBePlaying) {
@@ -69,6 +80,7 @@ export function init() {
   if (!audio.src) {
     audio.src = DEFAULT_BGM_SRC;
   }
+  audio.load();
   if (unlockBound) return;
   unlockBound = true;
   window.addEventListener('pointerdown', unlockPlayback, { passive: true });
@@ -109,6 +121,10 @@ export function play() {
     // Ensure the source is decodable again after stop/end transitions.
     audio.load();
     reloadBeforeNextPlay = false;
+    if (audio.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) {
+      schedulePlayWhenReady();
+      return;
+    }
   }
   clearRecoveryTimer();
   if (!userInteracted) {
@@ -131,11 +147,11 @@ export function stop() {
   if (!audio) return;
   shouldBePlaying = false;
   clearRecoveryTimer();
+  waitingForCanPlay = false;
   audio.pause();
   try {
     audio.currentTime = 0;
   } catch (err) {
     // Some browsers can reject seeking before metadata is ready.
   }
-  reloadBeforeNextPlay = true;
 }
