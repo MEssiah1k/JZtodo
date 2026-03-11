@@ -126,6 +126,22 @@ export async function getTodosUpdatedAfter(iso) {
   });
 }
 
+export async function getTodosUpdatedBetween(afterIso, upToIso) {
+  const db = await openDB();
+  return new Promise(resolve => {
+    const tx = db.transaction(STORE_NAME, 'readonly');
+    const store = tx.objectStore(STORE_NAME);
+    const req = store.getAll();
+    req.onsuccess = () =>
+      resolve(
+        req.result.filter(todo => {
+          const updatedAt = todo.updatedAt || '';
+          return updatedAt > afterIso && updatedAt <= upToIso;
+        })
+      );
+  });
+}
+
 export async function getSummariesUpdatedAfter(iso) {
   const db = await openDB();
   return new Promise(resolve => {
@@ -134,6 +150,22 @@ export async function getSummariesUpdatedAfter(iso) {
     const req = store.getAll();
     req.onsuccess = () =>
       resolve(req.result.filter(summary => (summary.updatedAt || '') > iso));
+  });
+}
+
+export async function getSummariesUpdatedBetween(afterIso, upToIso) {
+  const db = await openDB();
+  return new Promise(resolve => {
+    const tx = db.transaction(SUMMARY_STORE, 'readonly');
+    const store = tx.objectStore(SUMMARY_STORE);
+    const req = store.getAll();
+    req.onsuccess = () =>
+      resolve(
+        req.result.filter(summary => {
+          const updatedAt = summary.updatedAt || '';
+          return updatedAt > afterIso && updatedAt <= upToIso;
+        })
+      );
   });
 }
 
@@ -307,6 +339,22 @@ export async function getRecurrenceRulesUpdatedAfter(iso) {
     const req = store.getAll();
     req.onsuccess = () =>
       resolve(req.result.filter(rule => (rule.updatedAt || '') > iso));
+  });
+}
+
+export async function getRecurrenceRulesUpdatedBetween(afterIso, upToIso) {
+  const db = await openDB();
+  return new Promise(resolve => {
+    const tx = db.transaction(RECURRENCE_STORE, 'readonly');
+    const store = tx.objectStore(RECURRENCE_STORE);
+    const req = store.getAll();
+    req.onsuccess = () =>
+      resolve(
+        req.result.filter(rule => {
+          const updatedAt = rule.updatedAt || '';
+          return updatedAt > afterIso && updatedAt <= upToIso;
+        })
+      );
   });
 }
 

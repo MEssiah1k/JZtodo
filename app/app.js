@@ -16,7 +16,7 @@ import {
   getTodosByRuleId
 } from './db.js';
 import * as bgm from './bgm.js';
-import { initSync, syncNow, syncAllLocalToCloud, getUserId } from './sync.js';
+import { initSync, syncNow, pushNow, pullNow, syncAllLocalToCloud, getUserId } from './sync.js';
 
 const input = document.getElementById('todo-input');
 const dueInput = document.getElementById('todo-due');
@@ -38,6 +38,7 @@ const dateResetBtn = document.getElementById('date-reset');
 const datePicker = document.getElementById('date-picker');
 const dateWeekday = document.getElementById('date-weekday');
 const syncBtn = document.getElementById('sync-btn');
+const syncPullBtn = document.getElementById('sync-pull-btn');
 const syncFullBtn = document.getElementById('sync-full-btn');
 const syncStatus = document.getElementById('sync-status');
 
@@ -1241,7 +1242,7 @@ async function flushChangeSync() {
   pendingChangeSync = false;
   changeSyncInFlight = (async () => {
     try {
-      await syncNow();
+      await pushNow();
     } finally {
       changeSyncInFlight = null;
       if (changeSyncQueued || pendingChangeSync) {
@@ -1753,6 +1754,12 @@ if (syncBtn) {
   });
 }
 
+if (syncPullBtn) {
+  syncPullBtn.addEventListener('click', () => {
+    if (syncReady) pullNow();
+  });
+}
+
 if (syncFullBtn) {
   syncFullBtn.addEventListener('click', () => {
     if (syncReady) syncAllLocalToCloud();
@@ -1865,7 +1872,7 @@ if ('serviceWorker' in navigator) {
     location.reload();
   };
 
-  navigator.serviceWorker.register('./sw.js?v=20260311-bgm-stop-fix', { updateViaCache: 'none' }).then(reg => {
+  navigator.serviceWorker.register('./sw.js?v=20260311-sync-wrap-group', { updateViaCache: 'none' }).then(reg => {
     swRegistration = reg;
     reg.update();
     if (reg.waiting) promptForUpdate();

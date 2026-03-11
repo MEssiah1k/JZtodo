@@ -4,8 +4,8 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>PWA Todo</title>
-  <link rel="stylesheet" href="style.css?v=20260311-bgm-stop-fix" />
-  <link rel="manifest" href="app/manifest.json?v=20260311-bgm-stop-fix" />
+  <link rel="stylesheet" href="style.css?v=20260311-sync-wrap-group" />
+  <link rel="manifest" href="app/manifest.json?v=20260311-sync-wrap-group" />
 </head>
 <body>
   <button id="theme-toggle" class="theme-toggle" type="button" aria-label="切换主题">☾</button>
@@ -42,8 +42,11 @@
       <span id="date-weekday"></span>
       <button id="date-next" type="button">后一天</button>
       <button id="date-reset" type="button">回到今日</button>
-      <button id="sync-btn" type="button">同步</button>
-      <button id="sync-full-btn" type="button">全量上传</button>
+      <div class="date-sync-group">
+        <button id="sync-btn" type="button">同步</button>
+        <button id="sync-pull-btn" type="button">拉取</button>
+        <button id="sync-full-btn" type="button">上传</button>
+      </div>
       <span id="sync-status" class="sync-status">未同步</span>
     </div>
   </section>
@@ -145,7 +148,7 @@
       <div id="contribution-chart" class="contribution-chart" aria-label="固定半年评分热力图"></div>
     </div>
   </section>
-  <script type="module" src="app/app.js?v=20260311-bgm-stop-fix"></script>
+  <script type="module" src="app/app.js?v=20260311-sync-wrap-group"></script>
   </div>
 
   <div id="bgm-modal" class="modal-overlay hidden" role="dialog" aria-modal="true">

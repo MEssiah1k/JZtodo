@@ -5,8 +5,11 @@ import {
   getAllSummaries,
   getAllRecurrenceRules,
   getTodosUpdatedAfter,
+  getTodosUpdatedBetween,
   getSummariesUpdatedAfter,
+  getSummariesUpdatedBetween,
   getRecurrenceRulesUpdatedAfter,
+  getRecurrenceRulesUpdatedBetween,
   getSummaryByUuid,
   getRecurrenceRuleByUuid,
   addTodo,
@@ -224,6 +227,8 @@ export async function initSync({ onStatus, onUpdate } = {}) {
 export async function syncNow() {
   if (!supabase) return;
   try {
+    const syncCutoff = new Date().toISOString();
+    const previousSyncAt = lastSyncAt;
     setStatus('Syncing');
 
     // pull first, then push local updates (git-like flow)
@@ -234,19 +239,57 @@ export async function syncNow() {
     const dedupedAfterPull = await dedupeLocalTodosByNameAndStatus();
 
     if (DEBUG) console.log('[sync] push todos');
-    await pushLocalTodos();
+    await pushLocalTodos(previousSyncAt, syncCutoff);
     if (DEBUG) console.log('[sync] push summaries');
-    await pushLocalSummaries();
+    await pushLocalSummaries(previousSyncAt, syncCutoff);
     if (DEBUG) console.log('[sync] overwrite recurrence rules (local -> cloud)');
     await overwriteRemoteRecurrenceRulesFromLocal();
 
     dedupedAfterPull.forEach(date => updatedDates.add(date));
-    lastSyncAt = new Date().toISOString();
+    lastSyncAt = syncCutoff;
     await setMeta('lastSyncAt', lastSyncAt);
     setStatus('Idle', `last ${lastSyncAt}`);
     if (updatedDates.size) updateHandler(updatedDates);
   } catch (err) {
     if (DEBUG) console.log('[sync] error', err);
+    setStatus('Error');
+  }
+}
+
+export async function pushNow() {
+  if (!supabase) return;
+  try {
+    const syncCutoff = new Date().toISOString();
+    const previousSyncAt = lastSyncAt;
+    setStatus('Syncing', 'push only');
+    await normalizeLocalData();
+    if (DEBUG) console.log('[sync] push-only todos');
+    await pushLocalTodos(previousSyncAt, syncCutoff);
+    if (DEBUG) console.log('[sync] push-only summaries');
+    await pushLocalSummaries(previousSyncAt, syncCutoff);
+    if (DEBUG) console.log('[sync] push-only recurrence rules');
+    await overwriteRemoteRecurrenceRulesFromLocal();
+
+    lastSyncAt = syncCutoff;
+    await setMeta('lastSyncAt', lastSyncAt);
+    setStatus('Idle', `last ${lastSyncAt}`);
+  } catch (err) {
+    if (DEBUG) console.log('[sync] push-only error', err);
+    setStatus('Error');
+  }
+}
+
+export async function pullNow() {
+  if (!supabase) return;
+  try {
+    setStatus('Syncing', 'pull only');
+    const updatedDates = await pullRemoteChanges();
+    lastSyncAt = new Date().toISOString();
+    await setMeta('lastSyncAt', lastSyncAt);
+    setStatus('Idle', `last ${lastSyncAt}`);
+    if (updatedDates.size) updateHandler(updatedDates);
+  } catch (err) {
+    if (DEBUG) console.log('[sync] pull-only error', err);
     setStatus('Error');
   }
 }
@@ -298,8 +341,10 @@ export async function syncAllLocalToCloud() {
   }
 }
 
-export async function pushLocalTodos() {
-  const todos = await getTodosUpdatedAfter(lastSyncAt);
+export async function pushLocalTodos(afterIso = lastSyncAt, upToIso = null) {
+  const todos = upToIso
+    ? await getTodosUpdatedBetween(afterIso, upToIso)
+    : await getTodosUpdatedAfter(afterIso);
   if (DEBUG) console.log('[sync] todos to push', todos.length);
   if (!todos.length) return;
   const dedupedTodos = dedupeTodosForPush(todos);
@@ -310,8 +355,10 @@ export async function pushLocalTodos() {
   if (error) throw error;
 }
 
-export async function pushLocalSummaries() {
-  const summaries = await getSummariesUpdatedAfter(lastSyncAt);
+export async function pushLocalSummaries(afterIso = lastSyncAt, upToIso = null) {
+  const summaries = upToIso
+    ? await getSummariesUpdatedBetween(afterIso, upToIso)
+    : await getSummariesUpdatedAfter(afterIso);
   if (DEBUG) console.log('[sync] summaries to push', summaries.length);
   if (!summaries.length) return;
   if (summaries.length) {
@@ -321,8 +368,10 @@ export async function pushLocalSummaries() {
   }
 }
 
-export async function pushLocalRecurrenceRules() {
-  const rules = await getRecurrenceRulesUpdatedAfter(lastSyncAt);
+export async function pushLocalRecurrenceRules(afterIso = lastSyncAt, upToIso = null) {
+  const rules = upToIso
+    ? await getRecurrenceRulesUpdatedBetween(afterIso, upToIso)
+    : await getRecurrenceRulesUpdatedAfter(afterIso);
   if (DEBUG) console.log('[sync] recurrence rules to push', rules.length);
   if (!rules.length) return;
   const payload = rules.map(mapRecurrenceRuleToRemote);
