@@ -314,6 +314,28 @@ h2 {
 .contribution-cell[data-level="9"] { background: var(--contrib-9); }
 .contribution-cell[data-level="10"] { background: var(--contrib-10); }
 
+.contribution-cell[data-status="complete"] {
+  background: #22c55e;
+  border-color: rgba(34, 197, 94, 0.45);
+}
+
+.contribution-cell[data-status="incomplete"] {
+  background: #ef4444;
+  border-color: rgba(239, 68, 68, 0.45);
+}
+
+.contribution-cell[data-status="empty"] {
+  background-color: rgba(148, 163, 184, 0.1);
+  background-image: repeating-linear-gradient(
+    135deg,
+    rgba(148, 163, 184, 0.55) 0,
+    rgba(148, 163, 184, 0.55) 2px,
+    transparent 2px,
+    transparent 6px
+  );
+  border-color: rgba(148, 163, 184, 0.2);
+}
+
 .star {
   width: 22px;
   height: 22px;

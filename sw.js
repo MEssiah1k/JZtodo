@@ -1,17 +1,17 @@
-const CACHE_NAME = 'todo-cache-v45';
+const CACHE_NAME = 'todo-cache-v46';
 const CACHE_PREFIX = 'todo-cache-';
 const CORE_ASSETS = [
   './',
   './index.html',
-  './style.css?v=20260311-contrib-title',
-  './app/app.js?v=20260311-contrib-title',
-  './app/db.js?v=20260311-contrib-title',
-  './app/sync.js?v=20260311-contrib-title',
-  './app/manifest.json?v=20260311-contrib-title',
-  './app/bgm.js?v=20260311-contrib-title',
+  './style.css?v=20260314-task-status-chart',
+  './app/app.js?v=20260314-task-status-chart',
+  './app/db.js?v=20260314-task-status-chart',
+  './app/sync.js?v=20260314-task-status-chart',
+  './app/manifest.json?v=20260314-task-status-chart',
+  './app/bgm.js?v=20260314-task-status-chart',
   './assets/bgm/pinknoise.m4a',
   './app/icon.svg?v=2',
-  './sw.js?v=20260311-contrib-title'
+  './sw.js?v=20260314-task-status-chart'
 ];
 
 self.addEventListener('install', event => {

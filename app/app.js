@@ -33,6 +33,9 @@ const summaryModule = document.getElementById('summary-module');
 const contributionChart = document.getElementById('contribution-chart');
 const contributionSummary = document.getElementById('contribution-summary');
 const contributionTitle = document.getElementById('contribution-title');
+const taskStatusChart = document.getElementById('task-status-chart');
+const taskStatusSummary = document.getElementById('task-status-summary');
+const taskStatusTitle = document.getElementById('task-status-title');
 
 const datePrevBtn = document.getElementById('date-prev');
 const dateNextBtn = document.getElementById('date-next');
@@ -95,6 +98,7 @@ let restoreInProgressPromise = null;
 const runningTimeEls = new Map();
 let runningTicker = null;
 let contributionScores = new Map();
+let taskCompletionStatusByDate = new Map();
 let contributionResizeRaf = 0;
 let contributionHalfKey = '';
 let contributionFollowCurrentHalf = true;
@@ -178,6 +182,22 @@ function buildContributionHalfPeriods(today = new Date()) {
   return periods;
 }
 
+function getActiveContributionPeriod(periods, currentPeriod) {
+  if (!periods.length) return null;
+  if (
+    contributionFollowCurrentHalf &&
+    contributionLastCurrentHalfKey &&
+    contributionLastCurrentHalfKey !== currentPeriod.key
+  ) {
+    contributionHalfKey = currentPeriod.key;
+  }
+  contributionLastCurrentHalfKey = currentPeriod.key;
+  if (!contributionHalfKey || !periods.some(period => period.key === contributionHalfKey)) {
+    contributionHalfKey = currentPeriod.key;
+  }
+  return periods.find(period => period.key === contributionHalfKey) || currentPeriod;
+}
+
 function updateContributionCellSize(wrapper) {
   if (!wrapper) return;
   const weekCount = Number(wrapper.style.getPropertyValue('--weeks'));
@@ -210,7 +230,7 @@ async function setSelectedDate(dateStr, options = {}) {
   if (datePicker) datePicker.value = dateStr;
   if (dateWeekday) {
     const date = parseDateLocal(dateStr);
-    const weekdays = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
+    const weekdays = ['\u5468\u65e5', '\u5468\u4e00', '\u5468\u4e8c', '\u5468\u4e09', '\u5468\u56db', '\u5468\u4e94', '\u5468\u516d'];
     dateWeekday.textContent = weekdays[date.getDay()];
   }
   ensureRecurrenceForDate(dateStr);
@@ -690,9 +710,11 @@ async function loadSummaries() {
 }
 
 async function renderContributionChart() {
-  if (!contributionChart) return;
+  if (!contributionChart && !taskStatusChart) return;
   const allSummaries = await getAllSummaries();
+  const allTodos = await getAllTodos();
   const latestByDate = new Map();
+  const todoStatusByDate = new Map();
 
   allSummaries
     .filter(summary => !summary.deletedAt)
@@ -708,169 +730,226 @@ async function renderContributionChart() {
       latestByDate.set(summary.date, level);
     });
 
+  allTodos
+    .filter(todo => !todo.deletedAt && todo.date)
+    .forEach(todo => {
+      const current = todoStatusByDate.get(todo.date) || { total: 0, completed: 0 };
+      current.total += 1;
+      if (todo.completed) current.completed += 1;
+      todoStatusByDate.set(todo.date, current);
+    });
+
   contributionScores = latestByDate;
+  taskCompletionStatusByDate = new Map(
+    [...todoStatusByDate.entries()].map(([date, status]) => [
+      date,
+      status.total > 0 && status.completed === status.total ? 'complete' : 'incomplete'
+    ])
+  );
 
   const periods = buildContributionHalfPeriods(new Date());
   const currentPeriod = getContributionHalfPeriod(new Date());
   if (!periods.length) return;
-  if (
-    contributionFollowCurrentHalf &&
-    contributionLastCurrentHalfKey &&
-    contributionLastCurrentHalfKey !== currentPeriod.key
-  ) {
-    contributionHalfKey = currentPeriod.key;
-  }
-  contributionLastCurrentHalfKey = currentPeriod.key;
-  if (!contributionHalfKey || !periods.some(period => period.key === contributionHalfKey)) {
-    contributionHalfKey = currentPeriod.key;
-  }
-  const activePeriod = periods.find(period => period.key === contributionHalfKey) || currentPeriod;
+  const activePeriod = getActiveContributionPeriod(periods, currentPeriod);
+  if (!activePeriod) return;
+
   const { startDate: firstDate, endDate } = getContributionHalfRange(activePeriod);
   const gridStart = startOfWeekMonday(firstDate);
   const diffDays = Math.round((endDate - gridStart) / 86400000);
   const totalDays = diffDays + 1;
   const weekCount = Math.ceil(totalDays / 7);
-  const layout = document.createElement('div');
-  layout.className = 'contribution-layout';
 
-  const wrapper = document.createElement('div');
-  wrapper.className = 'contribution-grid';
-  wrapper.style.setProperty('--weeks', String(weekCount));
+  const buildChart = ({ chartEl, getCellData, includePeriodNav = false }) => {
+    if (!chartEl) return { countA: 0, countB: 0, countC: 0 };
 
-  const months = document.createElement('div');
-  months.className = 'contribution-months';
-  let lastLabeledMonth = null;
-  for (let week = 0; week < weekCount; week += 1) {
-    const monthLabel = document.createElement('span');
-    monthLabel.className = 'contribution-month';
-    const weekStart = shiftDate(gridStart, week * 7);
-    const columnDate = weekStart < firstDate ? firstDate : weekStart;
-    const monthKey = `${columnDate.getFullYear()}-${columnDate.getMonth()}`;
-    if (columnDate <= endDate && monthKey !== lastLabeledMonth) {
-      monthLabel.textContent = formatMonthShort(columnDate);
-      lastLabeledMonth = monthKey;
-    }
-    monthLabel.style.gridColumn = String(week + 1);
-    months.appendChild(monthLabel);
-  }
+    const layout = document.createElement('div');
+    layout.className = 'contribution-layout';
 
-  const weekdays = document.createElement('div');
-  weekdays.className = 'contribution-weekdays';
-  ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].forEach(label => {
-    const item = document.createElement('span');
-    item.textContent = label;
-    weekdays.appendChild(item);
-  });
+    const wrapper = document.createElement('div');
+    wrapper.className = 'contribution-grid';
+    wrapper.style.setProperty('--weeks', String(weekCount));
 
-  const cells = document.createElement('div');
-  cells.className = 'contribution-cells';
-  const tooltip = document.createElement('div');
-  tooltip.className = 'contribution-tooltip';
-  tooltip.setAttribute('role', 'status');
-  tooltip.setAttribute('aria-live', 'polite');
-  const periodNav = document.createElement('div');
-  periodNav.className = 'contribution-periods';
-
-  let ratedDays = 0;
-  let ratingTotal = 0;
-
-  const hideTooltip = () => {
-    tooltip.classList.remove('is-visible');
-  };
-
-  const showTooltip = (button, label) => {
-    const chartRect = contributionChart.getBoundingClientRect();
-    const buttonRect = button.getBoundingClientRect();
-    tooltip.textContent = label;
-    tooltip.classList.add('is-visible');
-    const tooltipWidth = tooltip.offsetWidth;
-    const tooltipHeight = tooltip.offsetHeight;
-    const sideOffset = 12;
-    const verticalOffset = 10;
-    const rightLeft = buttonRect.right - chartRect.left + sideOffset;
-    const leftLeft = buttonRect.left - chartRect.left - tooltipWidth - sideOffset;
-    const maxLeft = Math.max(4, chartRect.width - tooltipWidth - 4);
-    const left = rightLeft <= maxLeft ? rightLeft : Math.max(4, leftLeft);
-    const belowTop = buttonRect.bottom - chartRect.top + verticalOffset;
-    const aboveTop = buttonRect.top - chartRect.top - tooltipHeight - verticalOffset;
-    const maxTop = Math.max(4, chartRect.height - tooltipHeight - 4);
-    const top = belowTop <= maxTop ? belowTop : Math.max(4, aboveTop);
-    tooltip.style.left = `${left}px`;
-    tooltip.style.top = `${top}px`;
-  };
-
-  for (let week = 0; week < weekCount; week += 1) {
-    for (let day = 0; day < 7; day += 1) {
-      const cellDate = shiftDate(gridStart, week * 7 + day);
-      if (cellDate < firstDate || cellDate > endDate) {
-        const spacer = document.createElement('span');
-        spacer.className = 'contribution-cell is-outside';
-        spacer.setAttribute('aria-hidden', 'true');
-        cells.appendChild(spacer);
-        continue;
+    const months = document.createElement('div');
+    months.className = 'contribution-months';
+    let lastLabeledMonth = null;
+    for (let week = 0; week < weekCount; week += 1) {
+      const monthLabel = document.createElement('span');
+      monthLabel.className = 'contribution-month';
+      const weekStart = shiftDate(gridStart, week * 7);
+      const columnDate = weekStart < firstDate ? firstDate : weekStart;
+      const monthKey = `${columnDate.getFullYear()}-${columnDate.getMonth()}`;
+      if (columnDate <= endDate && monthKey !== lastLabeledMonth) {
+        monthLabel.textContent = formatMonthShort(columnDate);
+        lastLabeledMonth = monthKey;
       }
-      const dateStr = formatDateLocal(cellDate);
-      const level = contributionScores.get(dateStr) ?? 0;
-      if (cellDate >= firstDate && level > 0) {
-        ratedDays += 1;
-        ratingTotal += level;
-      }
-
-      const button = document.createElement('button');
-      button.type = 'button';
-      button.className = 'contribution-cell';
-      button.dataset.level = String(level);
-      const tooltipLabel = `${formatTooltipDate(dateStr)}：专注${level}次`;
-      button.setAttribute('aria-label', tooltipLabel);
-      button.addEventListener('mouseenter', () => {
-        showTooltip(button, tooltipLabel);
-      });
-      button.addEventListener('focus', () => {
-        showTooltip(button, tooltipLabel);
-      });
-      button.addEventListener('mouseleave', hideTooltip);
-      button.addEventListener('blur', hideTooltip);
-      button.addEventListener('click', () => {
-        void setSelectedDate(dateStr, { keepContributionVisible: true });
-      });
-      cells.appendChild(button);
+      monthLabel.style.gridColumn = String(week + 1);
+      months.appendChild(monthLabel);
     }
-  }
 
-  periods
-    .slice()
-    .reverse()
-    .forEach(period => {
-      const button = document.createElement('button');
-      button.type = 'button';
-      button.className = 'contribution-period';
-      if (period.key === activePeriod.key) button.classList.add('is-active');
-      button.textContent = formatContributionHalfLabel(period);
-      button.setAttribute('aria-pressed', period.key === activePeriod.key ? 'true' : 'false');
-      button.addEventListener('click', () => {
-        if (contributionHalfKey === period.key) return;
-        contributionHalfKey = period.key;
-        contributionFollowCurrentHalf = period.key === currentPeriod.key;
-        void renderContributionChart();
-      });
-      periodNav.appendChild(button);
+    const weekdays = document.createElement('div');
+    weekdays.className = 'contribution-weekdays';
+    ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].forEach(label => {
+      const item = document.createElement('span');
+      item.textContent = label;
+      weekdays.appendChild(item);
     });
 
-  wrapper.appendChild(months);
-  wrapper.appendChild(weekdays);
-  wrapper.appendChild(cells);
-  layout.appendChild(wrapper);
-  layout.appendChild(periodNav);
-  contributionChart.replaceChildren(layout, tooltip);
-  updateContributionCellSize(wrapper);
+    const cells = document.createElement('div');
+    cells.className = 'contribution-cells';
+    const tooltip = document.createElement('div');
+    tooltip.className = 'contribution-tooltip';
+    tooltip.setAttribute('role', 'status');
+    tooltip.setAttribute('aria-live', 'polite');
+
+    let countA = 0;
+    let countB = 0;
+    let countC = 0;
+
+    const hideTooltip = () => {
+      tooltip.classList.remove('is-visible');
+    };
+
+    const showTooltip = (button, label) => {
+      const chartRect = chartEl.getBoundingClientRect();
+      const buttonRect = button.getBoundingClientRect();
+      tooltip.textContent = label;
+      tooltip.classList.add('is-visible');
+      const tooltipWidth = tooltip.offsetWidth;
+      const tooltipHeight = tooltip.offsetHeight;
+      const sideOffset = 12;
+      const verticalOffset = 10;
+      const rightLeft = buttonRect.right - chartRect.left + sideOffset;
+      const leftLeft = buttonRect.left - chartRect.left - tooltipWidth - sideOffset;
+      const maxLeft = Math.max(4, chartRect.width - tooltipWidth - 4);
+      const left = rightLeft <= maxLeft ? rightLeft : Math.max(4, leftLeft);
+      const belowTop = buttonRect.bottom - chartRect.top + verticalOffset;
+      const aboveTop = buttonRect.top - chartRect.top - tooltipHeight - verticalOffset;
+      const maxTop = Math.max(4, chartRect.height - tooltipHeight - 4);
+      const top = belowTop <= maxTop ? belowTop : Math.max(4, aboveTop);
+      tooltip.style.left = `${left}px`;
+      tooltip.style.top = `${top}px`;
+    };
+
+    for (let week = 0; week < weekCount; week += 1) {
+      for (let day = 0; day < 7; day += 1) {
+        const cellDate = shiftDate(gridStart, week * 7 + day);
+        if (cellDate < firstDate || cellDate > endDate) {
+          const spacer = document.createElement('span');
+          spacer.className = 'contribution-cell is-outside';
+          spacer.setAttribute('aria-hidden', 'true');
+          cells.appendChild(spacer);
+          continue;
+        }
+
+        const dateStr = formatDateLocal(cellDate);
+        const cell = getCellData(dateStr);
+        countA += cell.countA || 0;
+        countB += cell.countB || 0;
+        countC += cell.countC || 0;
+
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'contribution-cell';
+        if (cell.level != null) button.dataset.level = String(cell.level);
+        if (cell.status) button.dataset.status = cell.status;
+        button.setAttribute('aria-label', cell.tooltip);
+        button.addEventListener('mouseenter', () => showTooltip(button, cell.tooltip));
+        button.addEventListener('focus', () => showTooltip(button, cell.tooltip));
+        button.addEventListener('mouseleave', hideTooltip);
+        button.addEventListener('blur', hideTooltip);
+        button.addEventListener('click', () => {
+          void setSelectedDate(dateStr, { keepContributionVisible: true });
+        });
+        cells.appendChild(button);
+      }
+    }
+
+    wrapper.appendChild(months);
+    wrapper.appendChild(weekdays);
+    wrapper.appendChild(cells);
+    layout.appendChild(wrapper);
+
+    if (includePeriodNav) {
+      const periodNav = document.createElement('div');
+      periodNav.className = 'contribution-periods';
+      periods
+        .slice()
+        .reverse()
+        .forEach(period => {
+          const button = document.createElement('button');
+          button.type = 'button';
+          button.className = 'contribution-period';
+          if (period.key === activePeriod.key) button.classList.add('is-active');
+          button.textContent = formatContributionHalfLabel(period);
+          button.setAttribute('aria-pressed', period.key === activePeriod.key ? 'true' : 'false');
+          button.addEventListener('click', () => {
+            if (contributionHalfKey === period.key) return;
+            contributionHalfKey = period.key;
+            contributionFollowCurrentHalf = period.key === currentPeriod.key;
+            void renderContributionChart();
+          });
+          periodNav.appendChild(button);
+        });
+      layout.appendChild(periodNav);
+    }
+
+    chartEl.replaceChildren(layout, tooltip);
+    updateContributionCellSize(wrapper);
+    return { countA, countB, countC };
+  };
+
+  const focusStats = buildChart({
+    chartEl: contributionChart,
+    includePeriodNav: true,
+    getCellData: dateStr => {
+      const level = contributionScores.get(dateStr) ?? 0;
+      return {
+        level,
+        tooltip: `${formatTooltipDate(dateStr)}?\u4e13\u6ce8${level}\u6b21`,
+        countA: level > 0 ? 1 : 0,
+        countB: level
+      };
+    }
+  });
+
+  const taskStats = buildChart({
+    chartEl: taskStatusChart,
+    includePeriodNav: true,
+    getCellData: dateStr => {
+      const status = taskCompletionStatusByDate.get(dateStr) || 'empty';
+      const tooltipText = status === 'complete'
+        ? '\u4efb\u52a1\u5df2\u5168\u90e8\u5b8c\u6210'
+        : status === 'incomplete'
+          ? '\u5b58\u5728\u672a\u5b8c\u6210\u4efb\u52a1'
+          : '\u5f53\u5929\u6ca1\u6709\u4efb\u52a1';
+      return {
+        status,
+        tooltip: `${formatTooltipDate(dateStr)}?${tooltipText}`,
+        countA: status === 'complete' ? 1 : 0,
+        countB: status === 'incomplete' ? 1 : 0,
+        countC: status === 'empty' ? 1 : 0
+      };
+    }
+  });
 
   if (contributionTitle) {
     contributionTitle.textContent = formatContributionHalfTitle(activePeriod);
   }
-  contributionChart.setAttribute('aria-label', formatContributionHalfTitle(activePeriod));
+  if (contributionChart) {
+    contributionChart.setAttribute('aria-label', formatContributionHalfTitle(activePeriod));
+  }
   if (contributionSummary) {
-    const average = ratedDays ? (ratingTotal / ratedDays).toFixed(1) : '0.0';
-    contributionSummary.textContent = `${formatContributionHalfLabel(activePeriod)}专注了${ratingTotal}次，平均 ${average} / 10`;
+    const average = focusStats.countA ? (focusStats.countB / focusStats.countA).toFixed(1) : '0.0';
+    contributionSummary.textContent = `${formatContributionHalfLabel(activePeriod)}\u4e13\u6ce8\u5171 ${focusStats.countB} \u6b21\uff0c\u5e73\u5747 ${average} / 10`;
+  }
+  if (taskStatusTitle) {
+    taskStatusTitle.textContent = `${formatContributionHalfLabel(activePeriod)}\u4efb\u52a1\u5b8c\u6210\u56fe`;
+  }
+  if (taskStatusChart) {
+    taskStatusChart.setAttribute('aria-label', `${formatContributionHalfLabel(activePeriod)}\u4efb\u52a1\u5b8c\u6210\u60c5\u51b5\u56fe`);
+  }
+  if (taskStatusSummary) {
+    taskStatusSummary.textContent = `\u5168\u5b8c\u6210 ${taskStats.countA} \u5929\uff0c\u672a\u5b8c\u6210 ${taskStats.countB} \u5929\uff0c\u65e0\u4efb\u52a1 ${taskStats.countC} \u5929`;
   }
 }
 
@@ -878,8 +957,8 @@ window.addEventListener('resize', () => {
   if (contributionResizeRaf) cancelAnimationFrame(contributionResizeRaf);
   contributionResizeRaf = requestAnimationFrame(() => {
     contributionResizeRaf = 0;
-    const wrapper = contributionChart?.querySelector('.contribution-grid');
-    updateContributionCellSize(wrapper);
+    updateContributionCellSize(contributionChart?.querySelector('.contribution-grid'));
+    updateContributionCellSize(taskStatusChart?.querySelector('.contribution-grid'));
   });
 });
 
@@ -1236,7 +1315,7 @@ function buildRecurrenceDateOptions() {
 buildRecurrenceDateOptions();
 
 let summarySaveTimer = null;
-let themeDark = false;
+let themeDark = true;
 let summaryRatingValue = 0;
 let bgmName = 'pinknoise';
 let syncReady = false;
@@ -1892,7 +1971,7 @@ if ('serviceWorker' in navigator) {
     location.reload();
   };
 
-  navigator.serviceWorker.register('./sw.js?v=20260311-contrib-title', { updateViaCache: 'none' }).then(reg => {
+  navigator.serviceWorker.register('./sw.js?v=20260314-task-status-chart', { updateViaCache: 'none' }).then(reg => {
     swRegistration = reg;
     reg.update();
     if (reg.waiting) promptForUpdate();

@@ -4,8 +4,8 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>PWA Todo</title>
-  <link rel="stylesheet" href="style.css?v=20260311-contrib-title" />
-  <link rel="manifest" href="app/manifest.json?v=20260311-contrib-title" />
+  <link rel="stylesheet" href="style.css?v=20260314-task-status-chart" />
+  <link rel="manifest" href="app/manifest.json?v=20260314-task-status-chart" />
 </head>
 <body>
   <button id="theme-toggle" class="theme-toggle" type="button" aria-label="切换主题">☾</button>
@@ -147,12 +147,19 @@
       </div>
       <div id="contribution-chart" class="contribution-chart" aria-label="固定半年评分热力图"></div>
     </div>
+    <div class="contribution-card">
+      <div class="contribution-header">
+        <h3 id="task-status-title">2026上半年任务完成图</h3>
+        <span id="task-status-summary" class="contribution-summary"></span>
+      </div>
+      <div id="task-status-chart" class="contribution-chart" aria-label="固定半年任务完成情况图"></div>
+    </div>
   </section>
   <section id="completed-module" class="completed-module hidden">
     <h2>已完成事项</h2>
     <ul id="completed-list"></ul>
   </section>
-  <script type="module" src="app/app.js?v=20260311-contrib-title"></script>
+  <script type="module" src="app/app.js?v=20260314-task-status-chart"></script>
   </div>
 
   <div id="bgm-modal" class="modal-overlay hidden" role="dialog" aria-modal="true">
