@@ -749,6 +749,7 @@ async function renderContributionChart() {
 
   const periods = buildContributionHalfPeriods(new Date());
   const currentPeriod = getContributionHalfPeriod(new Date());
+  const todayDateStr = formatDateLocal(new Date());
   if (!periods.length) return;
   const activePeriod = getActiveContributionPeriod(periods, currentPeriod);
   if (!activePeriod) return;
@@ -916,12 +917,16 @@ async function renderContributionChart() {
     chartEl: taskStatusChart,
     includePeriodNav: true,
     getCellData: dateStr => {
-      const status = taskCompletionStatusByDate.get(dateStr) || 'empty';
+      const status = dateStr >= todayDateStr
+        ? 'pending'
+        : (taskCompletionStatusByDate.get(dateStr) || 'empty');
       const tooltipText = status === 'complete'
         ? '\u4efb\u52a1\u5df2\u5168\u90e8\u5b8c\u6210'
         : status === 'incomplete'
           ? '\u5b58\u5728\u672a\u5b8c\u6210\u4efb\u52a1'
-          : '\u5f53\u5929\u6ca1\u6709\u4efb\u52a1';
+          : status === 'empty'
+            ? '\u5f53\u5929\u6ca1\u6709\u4efb\u52a1'
+            : '\u5f53\u5929\u5c1a\u672a\u7ed3\u675f';
       return {
         status,
         tooltip: `${formatTooltipDate(dateStr)}?${tooltipText}`,

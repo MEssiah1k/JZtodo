@@ -336,6 +336,19 @@ h2 {
   border-color: rgba(148, 163, 184, 0.2);
 }
 
+.contribution-cell[data-status="pending"] {
+  background-color: rgba(148, 163, 184, 0.1);
+  background-image: repeating-linear-gradient(
+    135deg,
+    rgba(148, 163, 184, 0.55) 0,
+    rgba(148, 163, 184, 0.55) 2px,
+    transparent 2px,
+    transparent 6px
+  );
+  border-color: rgba(148, 163, 184, 0.2);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
 .star {
   width: 22px;
   height: 22px;
