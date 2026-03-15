@@ -4,6 +4,7 @@
   --border: #e2e8f0;
   --text: #1f2937;
   --muted: #6b7280;
+  --timer-status: #374151;
   --input: #ffffff;
   --btn: #f8fafc;
   --todo: #eef2ff;
@@ -30,6 +31,7 @@ body.dark {
   --border: #3a3935;
   --text: #f2efe9;
   --muted: #b1aea6;
+  --timer-status: #b1aea6;
   --input: #3a3935;
   --btn: #33322f;
   --ring: #4caf50;
@@ -941,10 +943,12 @@ section {
   white-space: nowrap;
 }
 
-#timer-status {
+#timer-status,
+.bgm-status {
   margin-top: 8px;
-  color: #374151;
+  color: var(--timer-status);
   min-height: 20px;
+  font-size: 14px;
 }
 
 #timer-version {

@@ -10,6 +10,24 @@ let shouldBePlaying = false;
 let recoveryTimer = null;
 let unlockBound = false;
 let waitingForCanPlay = false;
+let playbackState = 'stopped';
+const stateListeners = new Set();
+
+function emitState() {
+  stateListeners.forEach(listener => {
+    try {
+      listener(playbackState);
+    } catch (err) {
+      // Ignore listener errors so audio state updates stay resilient.
+    }
+  });
+}
+
+function setPlaybackState(nextState) {
+  if (playbackState === nextState) return;
+  playbackState = nextState;
+  emitState();
+}
 
 function clearRecoveryTimer() {
   if (!recoveryTimer) return;
@@ -33,17 +51,41 @@ function ensureAudio() {
     audio.loop = true;
     audio.preload = 'auto';
     audio.volume = volume;
+    audio.addEventListener('play', () => {
+      setPlaybackState('playing');
+    });
+    audio.addEventListener('playing', () => {
+      setPlaybackState('playing');
+    });
     audio.addEventListener('ended', () => {
       if (!shouldBePlaying) return;
+      setPlaybackState('loading');
       scheduleRecovery();
     });
     audio.addEventListener('pause', () => {
-      if (!shouldBePlaying) return;
+      if (!shouldBePlaying) {
+        setPlaybackState('paused');
+        return;
+      }
+      setPlaybackState('loading');
       scheduleRecovery();
     });
-    audio.addEventListener('stalled', scheduleRecovery);
-    audio.addEventListener('error', scheduleRecovery);
-    audio.addEventListener('emptied', scheduleRecovery);
+    audio.addEventListener('stalled', () => {
+      setPlaybackState('loading');
+      scheduleRecovery();
+    });
+    audio.addEventListener('waiting', () => {
+      if (!shouldBePlaying) return;
+      setPlaybackState('loading');
+    });
+    audio.addEventListener('error', () => {
+      setPlaybackState('loading');
+      scheduleRecovery();
+    });
+    audio.addEventListener('emptied', () => {
+      setPlaybackState('loading');
+      scheduleRecovery();
+    });
   }
 }
 
@@ -80,6 +122,7 @@ export function init() {
   if (!audio.src) {
     audio.src = DEFAULT_BGM_SRC;
   }
+  emitState();
   audio.load();
   if (unlockBound) return;
   unlockBound = true;
@@ -116,6 +159,7 @@ export function play() {
     audio.src = DEFAULT_BGM_SRC;
   }
   shouldBePlaying = true;
+  setPlaybackState('loading');
   retryOnNextInteraction = true;
   if (reloadBeforeNextPlay || audio.ended || Boolean(audio.error)) {
     // Ensure the source is decodable again after stop/end transitions.
@@ -140,6 +184,7 @@ export function play() {
 export function pause() {
   shouldBePlaying = false;
   clearRecoveryTimer();
+  setPlaybackState('paused');
   if (audio) audio.pause();
 }
 
@@ -148,10 +193,23 @@ export function stop() {
   shouldBePlaying = false;
   clearRecoveryTimer();
   waitingForCanPlay = false;
+  setPlaybackState('stopped');
   audio.pause();
   try {
     audio.currentTime = 0;
   } catch (err) {
     // Some browsers can reject seeking before metadata is ready.
   }
+}
+
+export function getPlaybackState() {
+  return playbackState;
+}
+
+export function subscribePlaybackState(listener) {
+  stateListeners.add(listener);
+  listener(playbackState);
+  return () => {
+    stateListeners.delete(listener);
+  };
 }

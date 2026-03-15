@@ -69,6 +69,7 @@ const timerRemainingEl = document.getElementById('timer-remaining');
 const timerRingEl = document.getElementById('timer-ring');
 const timerMinutesInput = document.getElementById('timer-minutes');
 const timerStatusEl = document.getElementById('timer-status');
+const bgmStatusEl = document.getElementById('bgm-status');
 const timerVersionEl = document.getElementById('timer-version');
 const timerToggleBtn = document.getElementById('timer-toggle');
 const timerStopBtn = document.getElementById('timer-stop');
@@ -1332,6 +1333,17 @@ let changeSyncQueued = false;
 restoreInProgressPromise = restoreInProgressTodos();
 ensureRunningTicker();
 
+function renderBgmStatus(state) {
+  if (!bgmStatusEl) return;
+  const labels = {
+    stopped: '未播放',
+    paused: '已暂停',
+    loading: '准备播放中',
+    playing: '播放中'
+  };
+  bgmStatusEl.textContent = `BGM：${labels[state] || '未播放'}`;
+}
+
 function triggerChangeSync() {
   pendingChangeSync = true;
   void flushChangeSync();
@@ -1769,6 +1781,8 @@ setTimerStatus('未开始');
 if (timerVersionEl) timerVersionEl.textContent = `版本 ${APP_VERSION}`;
 updateToggleLabel();
 bgm.init();
+renderBgmStatus(bgm.getPlaybackState());
+bgm.subscribePlaybackState(renderBgmStatus);
 ensureTimerLeaseLoop();
 window.addEventListener('storage', event => {
   if (event.key !== TIMER_LEASE_KEY) return;
@@ -1976,7 +1990,7 @@ if ('serviceWorker' in navigator) {
     location.reload();
   };
 
-  navigator.serviceWorker.register('./sw.js?v=20260314-task-status-chart', { updateViaCache: 'none' }).then(reg => {
+  navigator.serviceWorker.register('./sw.js?v=20260316-bgm-status', { updateViaCache: 'none' }).then(reg => {
     swRegistration = reg;
     reg.update();
     if (reg.waiting) promptForUpdate();

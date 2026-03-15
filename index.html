@@ -4,8 +4,8 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>PWA Todo</title>
-  <link rel="stylesheet" href="style.css?v=20260314-task-status-chart" />
-  <link rel="manifest" href="app/manifest.json?v=20260314-task-status-chart" />
+  <link rel="stylesheet" href="style.css?v=20260316-bgm-status" />
+  <link rel="manifest" href="app/manifest.json?v=20260316-bgm-status" />
 </head>
 <body>
   <button id="theme-toggle" class="theme-toggle" type="button" aria-label="切换主题">☾</button>
@@ -30,6 +30,7 @@
         <button id="timer-stop" type="button">结束</button>
       </div>
         <div id="timer-status" aria-live="polite"></div>
+        <div id="bgm-status" class="bgm-status" aria-live="polite">BGM：未播放</div>
       </div>
     </div>
   </section>
@@ -159,7 +160,7 @@
     <h2>已完成事项</h2>
     <ul id="completed-list"></ul>
   </section>
-  <script type="module" src="app/app.js?v=20260314-task-status-chart"></script>
+  <script type="module" src="app/app.js?v=20260316-bgm-status"></script>
   </div>
 
   <div id="bgm-modal" class="modal-overlay hidden" role="dialog" aria-modal="true">
