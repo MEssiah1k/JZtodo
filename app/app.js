@@ -1990,7 +1990,7 @@ if ('serviceWorker' in navigator) {
     location.reload();
   };
 
-  navigator.serviceWorker.register('./sw.js?v=20260316-bgm-status', { updateViaCache: 'none' }).then(reg => {
+  navigator.serviceWorker.register('./sw.js?v=20260316-bgm-recover', { updateViaCache: 'none' }).then(reg => {
     swRegistration = reg;
     reg.update();
     if (reg.waiting) promptForUpdate();

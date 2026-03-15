@@ -95,6 +95,10 @@ function safePlay() {
   if (playPromise && typeof playPromise.catch === 'function') {
     playPromise.catch(() => {
       retryOnNextInteraction = true;
+      if (shouldBePlaying && userInteracted) {
+        reloadBeforeNextPlay = true;
+        scheduleRecovery();
+      }
     });
   }
 }
@@ -161,8 +165,15 @@ export function play() {
   shouldBePlaying = true;
   setPlaybackState('loading');
   retryOnNextInteraction = true;
-  if (reloadBeforeNextPlay || audio.ended || Boolean(audio.error)) {
-    // Ensure the source is decodable again after stop/end transitions.
+  const needsReload = (
+    reloadBeforeNextPlay ||
+    audio.ended ||
+    Boolean(audio.error) ||
+    audio.networkState === HTMLMediaElement.NETWORK_NO_SOURCE ||
+    audio.readyState < HTMLMediaElement.HAVE_CURRENT_DATA
+  );
+  if (needsReload) {
+    // Rebuild media state after stop/end/background suspension.
     audio.load();
     reloadBeforeNextPlay = false;
     if (audio.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) {
