@@ -624,7 +624,7 @@ async function dedupeLocalTodosByNameAndStatus() {
 
   for (const group of groups.values()) {
     if (group.length < 2) continue;
-    group.sort(compareTodoForDedupe);
+    group.sort(compareTodoForNameConflict);
     const duplicates = group.slice(1);
     for (const duplicate of duplicates) {
       await updateTodo({
@@ -642,8 +642,14 @@ async function dedupeLocalTodosByNameAndStatus() {
 function getDedupeKey(todo) {
   const date = todo && todo.date ? todo.date : '';
   const name = todo && typeof todo.text === 'string' ? todo.text.trim() : '';
-  const completed = todo && todo.completed ? '1' : '0';
-  return `${date}__${name}__${completed}`;
+  return `${date}__${name}`;
+}
+
+function compareTodoForNameConflict(a, b) {
+  const aCompleted = Boolean(a && a.completed);
+  const bCompleted = Boolean(b && b.completed);
+  if (aCompleted !== bCompleted) return aCompleted ? -1 : 1;
+  return compareTodoForDedupe(a, b);
 }
 
 function compareTodoForDedupe(a, b) {
