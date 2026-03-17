@@ -163,8 +163,23 @@ export function play() {
     audio.src = DEFAULT_BGM_SRC;
   }
   shouldBePlaying = true;
-  setPlaybackState('loading');
   retryOnNextInteraction = true;
+
+  const alreadyPlaying = (
+    !audio.paused &&
+    !audio.ended &&
+    !audio.error &&
+    audio.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA
+  );
+  if (alreadyPlaying) {
+    clearRecoveryTimer();
+    reloadBeforeNextPlay = false;
+    retryOnNextInteraction = false;
+    setPlaybackState('playing');
+    return;
+  }
+
+  setPlaybackState('loading');
   const needsReload = (
     reloadBeforeNextPlay ||
     audio.ended ||
