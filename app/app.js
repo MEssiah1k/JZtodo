@@ -1112,7 +1112,7 @@ function dateMatchesRule(dateStr, rule) {
 
 async function ensureRecurrenceForDate(dateStr) {
   const today = getTodayDateStr();
-  if (!isDateOnOrAfter(dateStr, today)) return;
+  if (dateStr !== today) return;
   const rules = (await getAllRecurrenceRules()).filter(rule => !rule.deletedAt);
   if (!rules.length) return;
   const skippedRuleIds = await getSkippedRuleIdsForDate(dateStr);
