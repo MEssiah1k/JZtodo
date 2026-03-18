@@ -173,6 +173,289 @@ h2 {
   overflow: hidden;
 }
 
+.timer-timeline-chart {
+  position: relative;
+  min-height: 72px;
+  overflow: visible;
+}
+
+.timeline-empty {
+  padding: 18px 16px;
+  border: 1px dashed var(--border);
+  border-radius: 12px;
+  color: var(--muted);
+  font-size: 13px;
+  text-align: center;
+}
+
+.timeline-tooltip {
+  position: absolute;
+  left: 0;
+  top: 0;
+  max-width: min(260px, calc(100vw - 48px));
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--card);
+  color: var(--text);
+  font-size: 12px;
+  line-height: 1.45;
+  white-space: pre-line;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.12s ease;
+  z-index: 3;
+  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.12);
+}
+
+.timeline-tooltip.is-visible {
+  opacity: 1;
+}
+
+.timeline-axis {
+  display: grid;
+  grid-template-columns: repeat(var(--timeline-ticks, 5), minmax(0, 1fr));
+  gap: 8px;
+  margin-bottom: 14px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.timeline-axis span:last-child {
+  text-align: right;
+}
+
+.timeline-body {
+  position: relative;
+  padding: 0;
+}
+
+.timeline-grid {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  grid-template-columns: repeat(var(--timeline-ticks, 5), minmax(0, 1fr));
+  pointer-events: none;
+}
+
+.timeline-grid span {
+  border-left: 1px dashed rgba(148, 163, 184, 0.28);
+}
+
+.timeline-grid span:last-child {
+  border-right: 1px dashed rgba(148, 163, 184, 0.28);
+}
+
+.timeline-lanes {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.timeline-lane {
+  position: relative;
+  height: 26px;
+  overflow: visible;
+  background: rgba(148, 163, 184, 0.08);
+  box-shadow: inset 0 0 0 1px rgba(148, 163, 184, 0.12);
+}
+
+.timeline-delete-btn {
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 2;
+  padding: 4px 10px;
+}
+
+.timeline-lane .timeline-delete-btn {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.timeline-lane.is-hovered .timeline-delete-btn,
+.timeline-lane.is-hovered .timeline-edit-btn,
+.timeline-lane:focus-within .timeline-delete-btn {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.timeline-lane:focus-within .timeline-edit-btn {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.timeline-edit-btn {
+  position: absolute;
+  right: 62px;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 2;
+  opacity: 0;
+  pointer-events: none;
+  padding: 4px 10px;
+}
+
+.timeline-segment {
+  position: absolute;
+  top: 0;
+  height: 26px;
+  min-width: 1px;
+  border: none;
+  border-radius: 0;
+  cursor: pointer;
+  box-shadow: none;
+  transition: opacity 0.12s ease;
+}
+
+.timeline-segment:hover,
+.timeline-segment:focus-visible {
+  outline: none;
+}
+
+.timeline-segment[data-state="paused"] {
+  opacity: 0.7;
+}
+
+.timeline-segment.is-interrupted,
+.timeline-segment[data-state="paused"] {
+  background-image: repeating-linear-gradient(
+    135deg,
+    rgba(255, 255, 255, 0.22) 0,
+    rgba(255, 255, 255, 0.22) 6px,
+    transparent 6px,
+    transparent 12px
+  );
+}
+
+.timeline-segment[data-state="running"] {
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.35);
+}
+
+.timeline-legend {
+  margin-top: 12px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.modal-card.timeline-edit-card {
+  display: inline-block;
+  width: max-content;
+  max-width: calc(100vw - 48px);
+  min-width: 0;
+}
+
+.timeline-edit-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: min(56vh, 520px);
+  overflow: auto;
+  align-items: flex-start;
+}
+
+.timeline-edit-row {
+  display: inline-grid;
+  grid-template-columns: max-content max-content max-content auto;
+  justify-content: start;
+  gap: 8px;
+  align-items: center;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--input);
+  width: fit-content;
+  max-width: 100%;
+}
+
+.timeline-edit-row span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.timeline-edit-row input[type="time"] {
+  width: 96px;
+  min-width: 0;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--card);
+  color: var(--text);
+}
+
+.timeline-edit-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.timeline-edit-add {
+  opacity: 1;
+  pointer-events: auto;
+  min-width: 40px;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  font-size: 24px;
+  line-height: 1;
+  border-radius: 10px;
+}
+
+.progress-btn.timeline-edit-save {
+  opacity: 1;
+  pointer-events: auto;
+  min-width: auto;
+  height: auto;
+  padding: 6px 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+}
+
+@media (max-width: 640px) {
+  .timeline-edit-row {
+    grid-template-columns: 1fr;
+  }
+
+  .timeline-edit-row input[type="time"] {
+    width: 100%;
+  }
+}
+
+.prompt-card {
+  width: min(360px, 92vw);
+}
+
+.prompt-message {
+  color: var(--text);
+  font-size: 15px;
+  line-height: 1.5;
+  margin-bottom: 16px;
+}
+
+.prompt-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.progress-btn.prompt-confirm {
+  opacity: 1;
+  pointer-events: auto;
+  min-width: auto;
+  height: auto;
+  padding: 6px 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+}
+
 .contribution-layout {
   display: flex;
   align-items: flex-start;

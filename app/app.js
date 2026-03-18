@@ -30,12 +30,25 @@ const summaryInput = document.getElementById('summary-input');
 const summaryStatus = document.getElementById('summary-status');
 const summaryRating = document.getElementById('summary-rating');
 const summaryModule = document.getElementById('summary-module');
+const timerTimelineChart = document.getElementById('timer-timeline-chart');
+const timerTimelineTitle = document.getElementById('timer-timeline-title');
+const timerTimelineSummary = document.getElementById('timer-timeline-summary');
 const contributionChart = document.getElementById('contribution-chart');
 const contributionSummary = document.getElementById('contribution-summary');
 const contributionTitle = document.getElementById('contribution-title');
 const taskStatusChart = document.getElementById('task-status-chart');
 const taskStatusSummary = document.getElementById('task-status-summary');
 const taskStatusTitle = document.getElementById('task-status-title');
+const timelineEditModal = document.getElementById('timeline-edit-modal');
+const timelineEditCloseBtn = document.getElementById('timeline-edit-close');
+const timelineEditTitle = document.getElementById('timeline-edit-title');
+const timelineEditList = document.getElementById('timeline-edit-list');
+const timelineEditAddBtn = document.getElementById('timeline-edit-add');
+const timelineEditSaveBtn = document.getElementById('timeline-edit-save');
+const promptModal = document.getElementById('prompt-modal');
+const promptMessage = document.getElementById('prompt-message');
+const promptCancelBtn = document.getElementById('prompt-cancel');
+const promptConfirmBtn = document.getElementById('prompt-confirm');
 
 const datePrevBtn = document.getElementById('date-prev');
 const dateNextBtn = document.getElementById('date-next');
@@ -83,6 +96,11 @@ const alarmVolume = document.getElementById('alarm-volume');
 const APP_VERSION = 'v0.1.1';
 const RECURRENCE_SKIP_META_KEY = 'recurrenceSkips';
 const CONTRIBUTION_START_YEAR = 2026;
+const TIMER_TIMELINE_META_KEY = 'timerTimelineByDate';
+const TIMER_TIMELINE_ACTIVE_META_KEY = 'timerTimelineActive';
+const TIMER_STATE_LOCAL_KEY = 'pwaTodo.timerState';
+const TIMER_TIMELINE_LOCAL_KEY = 'pwaTodo.timerTimelineByDate';
+const TIMER_TIMELINE_ACTIVE_LOCAL_KEY = 'pwaTodo.timerTimelineActive';
 const TIMER_LEASE_KEY = 'pwaTodo.timerLease';
 const TIMER_LEASE_TTL_MS = 4000;
 const TIMER_LEASE_HEARTBEAT_MS = 2000;
@@ -100,6 +118,13 @@ const runningTimeEls = new Map();
 let runningTicker = null;
 let contributionScores = new Map();
 let taskCompletionStatusByDate = new Map();
+let timerTimelineByDate = {};
+let activeTimerSegment = null;
+let timelineEditingSegmentId = null;
+let timelineEditingDate = '';
+let timelineEditingDraft = [];
+let timelineEditingInitialSnapshot = '';
+let promptResolver = null;
 let contributionResizeRaf = 0;
 let contributionHalfKey = '';
 let contributionFollowCurrentHalf = true;
@@ -141,6 +166,89 @@ function formatTooltipDate(dateStr) {
     year: 'numeric',
     month: 'short',
     day: 'numeric'
+  });
+}
+
+function getDateStartMs(dateStr) {
+  return parseDateLocal(dateStr).getTime();
+}
+
+function getDateEndMs(dateStr) {
+  return getDateStartMs(dateStr) + 24 * 60 * 60 * 1000;
+}
+
+function formatClockTime(timestamp) {
+  const date = new Date(timestamp);
+  return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
+}
+
+function formatDurationText(durationMs) {
+  const totalMinutes = Math.max(1, Math.round(durationMs / 60000));
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  if (hours && minutes) return `${hours}小时${minutes}分钟`;
+  if (hours) return `${hours}小时`;
+  return `${minutes}分钟`;
+}
+
+function padTimePart(value) {
+  return String(value).padStart(2, '0');
+}
+
+function formatTimeInputValue(timestamp) {
+  const date = new Date(timestamp);
+  return `${padTimePart(date.getHours())}:${padTimePart(date.getMinutes())}`;
+}
+
+function parseTimeInputValue(dateStr, value) {
+  const [hours, minutes] = String(value || '').split(':').map(Number);
+  if (!Number.isFinite(hours) || !Number.isFinite(minutes)) return null;
+  const date = parseDateLocal(dateStr);
+  date.setHours(hours, minutes, 0, 0);
+  return date.getTime();
+}
+
+function readLocalJson(key) {
+  try {
+    const raw = window.localStorage.getItem(key);
+    return raw ? JSON.parse(raw) : null;
+  } catch (err) {
+    return null;
+  }
+}
+
+function writeLocalJson(key, value) {
+  try {
+    if (value == null) {
+      window.localStorage.removeItem(key);
+    } else {
+      window.localStorage.setItem(key, JSON.stringify(value));
+    }
+  } catch (err) {
+    // ignore local persistence failures
+  }
+}
+
+function resolvePrompt(result) {
+  if (!promptResolver) return;
+  const resolver = promptResolver;
+  promptResolver = null;
+  if (promptModal) promptModal.classList.add('hidden');
+  resolver(result);
+}
+
+function openPromptModal(message, options = {}) {
+  if (!promptModal || !promptMessage || !promptConfirmBtn || !promptCancelBtn) {
+    return Promise.resolve(window.confirm(message));
+  }
+  if (promptResolver) resolvePrompt(false);
+  promptMessage.textContent = message;
+  promptConfirmBtn.textContent = options.confirmText || '确定';
+  promptCancelBtn.textContent = options.cancelText || '取消';
+  promptCancelBtn.classList.toggle('hidden', options.showCancel === false);
+  promptModal.classList.remove('hidden');
+  return new Promise(resolve => {
+    promptResolver = resolve;
   });
 }
 
@@ -707,7 +815,265 @@ async function loadSummaries() {
   summaryRatingValue = latest && typeof latest.rating === 'number' ? latest.rating : 0;
   renderSummaryRating();
   autoResizeSummary();
+  renderTimerTimeline();
   await renderContributionChart();
+}
+
+function getTimerTimelineSegmentsForDate(dateStr) {
+  const stored = Array.isArray(timerTimelineByDate[dateStr]) ? timerTimelineByDate[dateStr] : [];
+  const normalizeSegment = segment => {
+    const slices = Array.isArray(segment.slices) && segment.slices.length
+      ? segment.slices.map(slice => ({
+        startAt: slice.startAt,
+        endAt: slice.endAt
+      }))
+      : [{
+        startAt: segment.startAt,
+        endAt: segment.endAt
+      }];
+    const startAt = Math.min(...slices.map(slice => slice.startAt));
+    const endAt = Math.max(...slices.map(slice => slice.endAt));
+    return {
+      ...segment,
+      slices,
+      startAt,
+      endAt
+    };
+  };
+  const segments = stored.map((segment, index) => ({
+    ...normalizeSegment(segment),
+    _order: index
+  }));
+  if (activeTimerSegment && activeTimerSegment.date === dateStr) {
+    const now = Date.now();
+    const liveSlices = (activeTimerSegment.slices || []).map((slice, index, allSlices) => ({
+      startAt: slice.startAt,
+      endAt: activeTimerSegment.state === 'running' && index === allSlices.length - 1
+        ? now
+        : slice.endAt
+    }));
+    segments.push({
+      ...normalizeSegment({
+        ...activeTimerSegment,
+        slices: liveSlices
+      }),
+      _order: stored.length
+    });
+  }
+  return segments.sort((a, b) => {
+    const aSeq = Number.isFinite(a.sequence) ? a.sequence : Number.MAX_SAFE_INTEGER;
+    const bSeq = Number.isFinite(b.sequence) ? b.sequence : Number.MAX_SAFE_INTEGER;
+    if (aSeq !== bSeq) return aSeq - bSeq;
+    return (a._order || 0) - (b._order || 0);
+  });
+}
+
+function allocateTimelineLanes(segments) {
+  return segments.map((segment, index) => ({
+    ...segment,
+    laneIndex: index,
+    endAt: Math.max(segment.endAt || segment.startAt, segment.startAt + 60000)
+  }));
+}
+
+function getTimelineStateLabel(state) {
+  if (state === 'completed') return '自然完成';
+  if (state === 'stopped') return '手动结束';
+  if (state === 'paused') return '暂停中断';
+  if (state === 'running') return '进行中';
+  return '已记录';
+}
+
+function buildTimelineTooltip(segment) {
+  const durationMs = (segment.slices || []).reduce(
+    (sum, slice) => sum + Math.max(0, slice.endAt - slice.startAt),
+    0
+  );
+  return [
+    `${formatTooltipDate(segment.date)} · 第 ${segment.sequence} 段`,
+    `开始：${formatClockTime(segment.startAt)}`,
+    `结束：${formatClockTime(segment.endAt)}`,
+    `时长：${formatDurationText(durationMs)}`,
+    `片段：${(segment.slices || []).length} 段`,
+    `状态：${getTimelineStateLabel(segment.state)}`
+  ].join('\n');
+}
+
+function renderTimerTimeline() {
+  if (!timerTimelineChart) return;
+  const timelineDate = selectedDate;
+  const segments = allocateTimelineLanes(getTimerTimelineSegmentsForDate(timelineDate));
+  const dayStartMs = getDateStartMs(timelineDate);
+  const dayEndMs = getDateEndMs(timelineDate);
+
+  if (timerTimelineTitle) {
+    timerTimelineTitle.textContent = `${formatTooltipDate(timelineDate)}工作时间段`;
+  }
+
+  if (!segments.length) {
+    timerTimelineChart.replaceChildren(Object.assign(document.createElement('div'), {
+      className: 'timeline-empty',
+      textContent: timelineDate === getTodayDateStr()
+        ? '今天还没有记录到倒计时时间段'
+        : '这一天还没有记录到时间段'
+    }));
+    if (timerTimelineSummary) timerTimelineSummary.textContent = '';
+    return;
+  }
+
+  const minStart = Math.max(dayStartMs, Math.min(...segments.map(segment => segment.startAt)));
+  const maxEnd = Math.min(dayEndMs, Math.max(...segments.map(segment => segment.endAt)));
+  const paddingMs = 15 * 60 * 1000;
+  let axisStart = Math.max(dayStartMs, minStart - paddingMs);
+  let axisEnd = Math.min(dayEndMs, maxEnd + paddingMs);
+  if (axisEnd - axisStart < 60 * 60 * 1000) {
+    const center = (axisStart + axisEnd) / 2;
+    axisStart = Math.max(dayStartMs, center - 30 * 60 * 1000);
+    axisEnd = Math.min(dayEndMs, center + 30 * 60 * 1000);
+  }
+  const axisDuration = Math.max(60 * 1000, axisEnd - axisStart);
+  const tickCount = 5;
+
+  const axis = document.createElement('div');
+  axis.className = 'timeline-axis';
+  axis.style.setProperty('--timeline-ticks', String(tickCount));
+  for (let index = 0; index < tickCount; index += 1) {
+    const label = document.createElement('span');
+    const ratio = tickCount === 1 ? 0 : index / (tickCount - 1);
+    label.textContent = formatClockTime(axisStart + axisDuration * ratio);
+    axis.appendChild(label);
+  }
+
+  const body = document.createElement('div');
+  body.className = 'timeline-body';
+
+  const grid = document.createElement('div');
+  grid.className = 'timeline-grid';
+  grid.style.setProperty('--timeline-ticks', String(tickCount));
+  for (let index = 0; index < tickCount; index += 1) {
+    grid.appendChild(document.createElement('span'));
+  }
+
+  const lanes = document.createElement('div');
+  lanes.className = 'timeline-lanes';
+  const laneCount = Math.max(...segments.map(segment => segment.laneIndex)) + 1;
+  const laneEls = Array.from({ length: laneCount }, () => {
+    const lane = document.createElement('div');
+    lane.className = 'timeline-lane';
+    lanes.appendChild(lane);
+    return lane;
+  });
+
+  const tooltip = document.createElement('div');
+  tooltip.className = 'timeline-tooltip';
+  tooltip.setAttribute('role', 'status');
+  tooltip.setAttribute('aria-live', 'polite');
+
+  const hideTooltip = () => {
+    tooltip.classList.remove('is-visible');
+  };
+
+  const showTooltip = (button, text) => {
+    const chartRect = timerTimelineChart.getBoundingClientRect();
+    const buttonRect = button.getBoundingClientRect();
+    tooltip.textContent = text;
+    tooltip.classList.add('is-visible');
+    const tooltipWidth = tooltip.offsetWidth;
+    const tooltipHeight = tooltip.offsetHeight;
+    const maxLeft = Math.max(4, chartRect.width - tooltipWidth - 4);
+    const left = Math.min(
+      maxLeft,
+      Math.max(4, buttonRect.left - chartRect.left + buttonRect.width / 2 - tooltipWidth / 2)
+    );
+    const belowTop = buttonRect.bottom - chartRect.top + 10;
+    const aboveTop = buttonRect.top - chartRect.top - tooltipHeight - 10;
+    const maxTop = Math.max(4, chartRect.height - tooltipHeight - 4);
+    const top = belowTop <= maxTop ? belowTop : Math.max(4, aboveTop);
+    tooltip.style.left = `${left}px`;
+    tooltip.style.top = `${top}px`;
+  };
+
+  segments.forEach(segment => {
+    const lane = laneEls[segment.laneIndex];
+    const tooltipText = buildTimelineTooltip(segment);
+    lane.replaceChildren();
+    lane.classList.remove('is-hovered');
+
+    if (segment.state !== 'running') {
+      const editBtn = document.createElement('button');
+      editBtn.type = 'button';
+      editBtn.className = 'progress-btn timeline-edit-btn';
+      editBtn.textContent = '修改';
+      editBtn.addEventListener('click', event => {
+        event.stopPropagation();
+        hideTooltip();
+        openTimelineEditModal(segment);
+      });
+      lane.appendChild(editBtn);
+
+      const deleteBtn = document.createElement('button');
+      deleteBtn.type = 'button';
+      deleteBtn.className = 'delete-btn timeline-delete-btn';
+      deleteBtn.textContent = '删除';
+      deleteBtn.addEventListener('click', event => {
+        event.stopPropagation();
+        hideTooltip();
+        deleteTimerTimelineSegment(segment.id);
+      });
+      lane.appendChild(deleteBtn);
+
+      lane.addEventListener('mouseenter', () => {
+        lane.classList.add('is-hovered');
+      });
+      lane.addEventListener('mouseleave', () => {
+        lane.classList.remove('is-hovered');
+      });
+      lane.addEventListener('focusin', () => {
+        lane.classList.add('is-hovered');
+      });
+      lane.addEventListener('focusout', () => {
+        if (!lane.contains(document.activeElement)) {
+          lane.classList.remove('is-hovered');
+        }
+      });
+    }
+
+    (segment.slices || []).forEach((slice, index, allSlices) => {
+      const startRatio = Math.max(0, Math.min(1, (slice.startAt - axisStart) / axisDuration));
+      const endRatio = Math.max(0, Math.min(1, (slice.endAt - axisStart) / axisDuration));
+      const left = startRatio * 100;
+      const width = Math.max(0, (endRatio - startRatio) * 100);
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'timeline-segment';
+      button.dataset.state = segment.state;
+      button.style.left = `${left}%`;
+      button.style.width = `${width}%`;
+      button.style.backgroundColor = segment.color;
+      if (segment.state === 'paused' && index < allSlices.length - 1) {
+        button.classList.add('is-interrupted');
+      }
+      button.setAttribute('aria-label', tooltipText.replace(/\n/g, '，'));
+      button.addEventListener('mouseenter', () => showTooltip(button, tooltipText));
+      button.addEventListener('focus', () => showTooltip(button, tooltipText));
+      button.addEventListener('mouseleave', hideTooltip);
+      button.addEventListener('blur', hideTooltip);
+      lane.appendChild(button);
+    });
+  });
+
+  body.appendChild(grid);
+  body.appendChild(lanes);
+
+  const totalDurationMs = segments.reduce(
+    (sum, segment) => sum + (segment.slices || []).reduce(
+      (sliceSum, slice) => sliceSum + Math.max(0, slice.endAt - slice.startAt),
+      0
+    ),
+    0
+  );
+  timerTimelineChart.replaceChildren(axis, body, tooltip);
+  if (timerTimelineSummary) timerTimelineSummary.textContent = '';
 }
 
 async function renderContributionChart() {
@@ -945,8 +1311,13 @@ async function renderContributionChart() {
     contributionChart.setAttribute('aria-label', formatContributionHalfTitle(activePeriod));
   }
   if (contributionSummary) {
-    const average = focusStats.countA ? (focusStats.countB / focusStats.countA).toFixed(1) : '0.0';
-    contributionSummary.textContent = `${formatContributionHalfLabel(activePeriod)}\u4e13\u6ce8\u5171 ${focusStats.countB} \u6b21\uff0c\u5e73\u5747 ${average} / 10`;
+    const recentDays = 15;
+    let recentTotal = 0;
+    for (let offset = 0; offset < recentDays; offset += 1) {
+      const date = shiftDate(parseDateLocal(todayDateStr), -offset);
+      recentTotal += contributionScores.get(formatDateLocal(date)) ?? 0;
+    }
+    contributionSummary.textContent = `最近${recentDays}天平均 ${(recentTotal / recentDays).toFixed(1)} 次`;
   }
   if (taskStatusTitle) {
     taskStatusTitle.textContent = `${formatContributionHalfLabel(activePeriod)}\u4efb\u52a1\u5b8c\u6210\u56fe`;
@@ -1525,6 +1896,16 @@ setSelectedDate(selectedDate);
 
 // -------- Timer module --------
 const DEFAULT_MINUTES = 90;
+const TIMER_TIMELINE_COLORS = [
+  '#0f766e',
+  '#f97316',
+  '#2563eb',
+  '#dc2626',
+  '#7c3aed',
+  '#0891b2',
+  '#65a30d',
+  '#ea580c'
+];
 let timerDurationMs = DEFAULT_MINUTES * 60 * 1000;
 let timerInterval = null;
 let timerRunning = false;
@@ -1541,6 +1922,312 @@ let audioContext = null;
 let lastPersistAt = 0;
 let ownsTimerLease = false;
 let timerLeaseInterval = null;
+
+function getTimerTimelineSequence(dateStr) {
+  const history = Array.isArray(timerTimelineByDate[dateStr]) ? timerTimelineByDate[dateStr] : [];
+  const activeCount = activeTimerSegment && activeTimerSegment.date === dateStr ? 1 : 0;
+  return history.length + activeCount + 1;
+}
+
+async function persistTimerTimelineHistory() {
+  writeLocalJson(TIMER_TIMELINE_LOCAL_KEY, timerTimelineByDate);
+  await setMeta(TIMER_TIMELINE_META_KEY, timerTimelineByDate);
+}
+
+async function persistActiveTimerSegment() {
+  writeLocalJson(TIMER_TIMELINE_ACTIVE_LOCAL_KEY, activeTimerSegment);
+  await setMeta(TIMER_TIMELINE_ACTIVE_META_KEY, activeTimerSegment);
+}
+
+async function restoreTimerTimeline() {
+  const localHistory = readLocalJson(TIMER_TIMELINE_LOCAL_KEY);
+  const localActive = readLocalJson(TIMER_TIMELINE_ACTIVE_LOCAL_KEY);
+  if (localHistory && typeof localHistory === 'object') {
+    timerTimelineByDate = localHistory;
+  } else {
+    const historyRecord = await getMeta(TIMER_TIMELINE_META_KEY);
+    timerTimelineByDate = historyRecord && historyRecord.value && typeof historyRecord.value === 'object'
+      ? historyRecord.value
+      : {};
+  }
+  if (localActive !== null) {
+    activeTimerSegment = localActive;
+  } else {
+    const activeRecord = await getMeta(TIMER_TIMELINE_ACTIVE_META_KEY);
+    activeTimerSegment = activeRecord ? activeRecord.value : null;
+  }
+  renderTimerTimeline();
+}
+
+function startTimerTimelineSegment(now = Date.now()) {
+  const dateStr = formatDateLocal(new Date(now));
+  if (
+    activeTimerSegment &&
+    activeTimerSegment.date === dateStr &&
+    activeTimerSegment.state === 'paused'
+  ) {
+    const slices = Array.isArray(activeTimerSegment.slices) ? activeTimerSegment.slices.slice() : [];
+    slices.push({ startAt: now, endAt: now });
+    activeTimerSegment = {
+      ...activeTimerSegment,
+      state: 'running',
+      slices
+    };
+    void persistActiveTimerSegment();
+    renderTimerTimeline();
+    return;
+  }
+  const sequence = getTimerTimelineSequence(dateStr);
+  activeTimerSegment = {
+    id: generateUUID(),
+    date: dateStr,
+    startAt: now,
+    endAt: now,
+    state: 'running',
+    plannedDurationMs: timerRemainingMs,
+    sequence,
+    color: TIMER_TIMELINE_COLORS[(sequence - 1) % TIMER_TIMELINE_COLORS.length],
+    slices: [{ startAt: now, endAt: now }]
+  };
+  void persistActiveTimerSegment();
+  renderTimerTimeline();
+}
+
+function pauseTimerTimelineSegment(endAt = Date.now()) {
+  if (!activeTimerSegment || activeTimerSegment.state !== 'running') return;
+  const slices = Array.isArray(activeTimerSegment.slices) ? activeTimerSegment.slices.slice() : [];
+  if (!slices.length) {
+    slices.push({ startAt: endAt, endAt });
+  } else {
+    const lastIndex = slices.length - 1;
+    slices[lastIndex] = {
+      ...slices[lastIndex],
+      endAt: Math.max(endAt, slices[lastIndex].startAt + 1000)
+    };
+  }
+  activeTimerSegment = {
+    ...activeTimerSegment,
+    state: 'paused',
+    slices
+  };
+  void persistActiveTimerSegment();
+  renderTimerTimeline();
+}
+
+function finalizeTimerTimelineSegment(state, endAt = Date.now()) {
+  if (!activeTimerSegment) return;
+  const slices = Array.isArray(activeTimerSegment.slices) ? activeTimerSegment.slices.slice() : [];
+  if (activeTimerSegment.state === 'running') {
+    if (!slices.length) {
+      slices.push({ startAt: endAt, endAt });
+    } else {
+      const lastIndex = slices.length - 1;
+      slices[lastIndex] = {
+        ...slices[lastIndex],
+        endAt: Math.max(endAt, slices[lastIndex].startAt + 1000)
+      };
+    }
+  }
+  const startAt = Math.min(...slices.map(slice => slice.startAt));
+  const finalEndAt = Math.max(...slices.map(slice => slice.endAt));
+  const segment = {
+    ...activeTimerSegment,
+    startAt,
+    endAt: finalEndAt,
+    slices,
+    state
+  };
+  const history = Array.isArray(timerTimelineByDate[segment.date]) ? timerTimelineByDate[segment.date] : [];
+  timerTimelineByDate = {
+    ...timerTimelineByDate,
+    [segment.date]: [...history, segment]
+  };
+  activeTimerSegment = null;
+  void Promise.all([persistTimerTimelineHistory(), persistActiveTimerSegment()]);
+  renderTimerTimeline();
+}
+
+function deleteTimerTimelineSegment(segmentId) {
+  if (!segmentId) return;
+
+  if (activeTimerSegment && activeTimerSegment.id === segmentId) {
+    if (activeTimerSegment.state === 'running') {
+      void openPromptModal('进行中的时间段请先暂停或结束后再删除。', {
+        showCancel: false,
+        confirmText: '知道了'
+      });
+      return;
+    }
+    activeTimerSegment = null;
+    void persistActiveTimerSegment();
+    renderTimerTimeline();
+    return;
+  }
+
+  let changed = false;
+  const nextTimelineByDate = {};
+  Object.entries(timerTimelineByDate).forEach(([dateStr, segments]) => {
+    const source = Array.isArray(segments) ? segments : [];
+    const remaining = source.filter(segment => segment.id !== segmentId);
+    if (remaining.length !== source.length) changed = true;
+    if (remaining.length) nextTimelineByDate[dateStr] = remaining;
+  });
+
+  if (!changed) return;
+  timerTimelineByDate = nextTimelineByDate;
+  void persistTimerTimelineHistory();
+  renderTimerTimeline();
+}
+
+function closeTimelineEditModal() {
+  timelineEditingSegmentId = null;
+  timelineEditingDate = '';
+  timelineEditingDraft = [];
+  timelineEditingInitialSnapshot = '';
+  if (timelineEditModal) timelineEditModal.classList.add('hidden');
+}
+
+function getTimelineEditSnapshot() {
+  return JSON.stringify(timelineEditingDraft);
+}
+
+function hasUnsavedTimelineEdits() {
+  return timelineEditingInitialSnapshot && getTimelineEditSnapshot() !== timelineEditingInitialSnapshot;
+}
+
+function requestCloseTimelineEditModal() {
+  if (hasUnsavedTimelineEdits()) {
+    void openPromptModal('当前修改尚未保存，确定要关闭吗？').then(shouldDiscard => {
+      if (!shouldDiscard) return;
+      closeTimelineEditModal();
+    });
+    return;
+  }
+  closeTimelineEditModal();
+}
+
+function renderTimelineEditDraft() {
+  if (!timelineEditList) return;
+  timelineEditList.replaceChildren();
+
+  timelineEditingDraft.forEach((slice, index) => {
+    const row = document.createElement('div');
+    row.className = 'timeline-edit-row';
+
+    const label = document.createElement('span');
+    label.textContent = `片段 ${index + 1}`;
+
+    const startInput = document.createElement('input');
+    startInput.type = 'time';
+    startInput.step = '60';
+    startInput.value = slice.start;
+    startInput.addEventListener('input', () => {
+      timelineEditingDraft[index].start = startInput.value;
+    });
+
+    const endInput = document.createElement('input');
+    endInput.type = 'time';
+    endInput.step = '60';
+    endInput.value = slice.end;
+    endInput.addEventListener('input', () => {
+      timelineEditingDraft[index].end = endInput.value;
+    });
+
+    const deleteBtn = document.createElement('button');
+    deleteBtn.type = 'button';
+    deleteBtn.className = 'delete-btn';
+    deleteBtn.textContent = '删除';
+    deleteBtn.style.opacity = '1';
+    deleteBtn.style.pointerEvents = 'auto';
+    deleteBtn.addEventListener('click', () => {
+      timelineEditingDraft.splice(index, 1);
+      renderTimelineEditDraft();
+    });
+
+    row.append(label, startInput, endInput, deleteBtn);
+    timelineEditList.appendChild(row);
+  });
+}
+
+function openTimelineEditModal(segment) {
+  if (!timelineEditModal || !segment) return;
+  timelineEditingSegmentId = segment.id;
+  timelineEditingDate = segment.date;
+  timelineEditingDraft = (segment.slices || []).map(slice => ({
+    start: formatTimeInputValue(slice.startAt),
+    end: formatTimeInputValue(slice.endAt)
+  }));
+  timelineEditingInitialSnapshot = getTimelineEditSnapshot();
+  if (timelineEditTitle) {
+    timelineEditTitle.textContent = `${formatTooltipDate(segment.date)} · 第 ${segment.sequence} 段`;
+  }
+  renderTimelineEditDraft();
+  timelineEditModal.classList.remove('hidden');
+}
+
+async function saveTimelineEditModal() {
+  if (!timelineEditingSegmentId || !timelineEditingDate) return;
+  if (!timelineEditingDraft.length) {
+    await openPromptModal('至少保留一个时间片段。', { showCancel: false, confirmText: '知道了' });
+    return;
+  }
+
+  const slices = timelineEditingDraft
+    .map(item => ({
+      startAt: parseTimeInputValue(timelineEditingDate, item.start),
+      endAt: parseTimeInputValue(timelineEditingDate, item.end)
+    }))
+    .sort((a, b) => a.startAt - b.startAt);
+
+  if (slices.some(slice => slice.startAt == null || slice.endAt == null || slice.endAt < slice.startAt)) {
+    await openPromptModal('请检查时间片段，结束时间不能早于开始时间。', {
+      showCancel: false,
+      confirmText: '知道了'
+    });
+    return;
+  }
+  for (let index = 1; index < slices.length; index += 1) {
+    if (slices[index].startAt < slices[index - 1].endAt) {
+      await openPromptModal('时间片段不能重叠，请调整后再保存。', {
+        showCancel: false,
+        confirmText: '知道了'
+      });
+      return;
+    }
+  }
+
+  const updateSegment = segment => ({
+    ...segment,
+    slices,
+    startAt: slices[0].startAt,
+    endAt: slices[slices.length - 1].endAt
+  });
+
+  if (activeTimerSegment && activeTimerSegment.id === timelineEditingSegmentId) {
+    activeTimerSegment = updateSegment(activeTimerSegment);
+    await persistActiveTimerSegment();
+    renderTimerTimeline();
+    closeTimelineEditModal();
+    return;
+  }
+
+  let changed = false;
+  timerTimelineByDate = Object.fromEntries(
+    Object.entries(timerTimelineByDate).map(([dateStr, segments]) => [
+      dateStr,
+      (Array.isArray(segments) ? segments : []).map(segment => {
+        if (segment.id !== timelineEditingSegmentId) return segment;
+        changed = true;
+        return updateSegment(segment);
+      })
+    ])
+  );
+
+  if (!changed) return;
+  await persistTimerTimelineHistory();
+  renderTimerTimeline();
+  closeTimelineEditModal();
+}
 
 function readTimerLease() {
   try {
@@ -1691,6 +2378,7 @@ function tickTimer() {
     playTone(600, 800);
     updateToggleLabel();
     persistTimerState();
+    finalizeTimerTimelineSegment('completed', now);
     bgm.stop();
     releaseTimerLease();
     clearTimerTicking();
@@ -1704,6 +2392,7 @@ function tickTimer() {
       bellPhase.state = 'work';
       bellPhase.nextBellAt = now + randomBellSeconds() * 1000;
       playTone(900, 180);
+      renderTimerTimeline();
     }
     return;
   }
@@ -1714,6 +2403,7 @@ function tickTimer() {
     bellPhase.state = 'rest';
     bellPhase.restEndsAt = now + 10000;
     playTone(420, 180);
+    renderTimerTimeline();
   }
 
   if (now - lastPersistAt > 5000) {
@@ -1727,9 +2417,11 @@ function startTimer() {
   if (timerRemainingMs <= 0 || timerRemainingMs > timerDurationMs) {
     timerRemainingMs = timerDurationMs;
   }
+  const now = Date.now();
   timerRunning = true;
-  timerStartAt = Date.now();
-  resetBellSchedule(Date.now());
+  timerStartAt = now;
+  resetBellSchedule(now);
+  startTimerTimelineSegment(now);
   updateToggleLabel();
   persistTimerState();
   updateTimerLease();
@@ -1748,18 +2440,21 @@ function pauseTimer() {
   setTimerStatus('已暂停');
   updateToggleLabel();
   persistTimerState();
+  pauseTimerTimelineSegment(now);
   bgm.pause();
   releaseTimerLease();
   clearTimerTicking();
 }
 
 function stopTimer() {
+  const now = Date.now();
   timerRunning = false;
   timerRemainingMs = timerDurationMs;
   updateTimerUI(timerRemainingMs);
   setTimerStatus('已结束');
   updateToggleLabel();
   persistTimerState();
+  finalizeTimerTimelineSegment('stopped', now);
   bgm.stop();
   releaseTimerLease();
   clearTimerTicking();
@@ -1778,6 +2473,7 @@ function applyTimerMinutes(value) {
   setTimerStatus('未开始');
   updateToggleLabel();
   persistTimerState();
+  finalizeTimerTimelineSegment('stopped');
   bgm.stop();
   releaseTimerLease();
   clearTimerTicking();
@@ -1928,6 +2624,51 @@ if (bgmModal) {
   });
 }
 
+if (timelineEditCloseBtn) {
+  timelineEditCloseBtn.addEventListener('click', requestCloseTimelineEditModal);
+}
+
+if (timelineEditModal) {
+  timelineEditModal.addEventListener('click', event => {
+    if (event.target === timelineEditModal) requestCloseTimelineEditModal();
+  });
+}
+
+if (promptCancelBtn) {
+  promptCancelBtn.addEventListener('click', () => {
+    resolvePrompt(false);
+  });
+}
+
+if (promptConfirmBtn) {
+  promptConfirmBtn.addEventListener('click', () => {
+    resolvePrompt(true);
+  });
+}
+
+if (promptModal) {
+  promptModal.addEventListener('click', event => {
+    if (event.target === promptModal) resolvePrompt(false);
+  });
+}
+
+if (timelineEditAddBtn) {
+  timelineEditAddBtn.addEventListener('click', () => {
+    const last = timelineEditingDraft[timelineEditingDraft.length - 1];
+    timelineEditingDraft.push({
+      start: last ? last.end : '09:00',
+      end: last ? last.end : '09:30'
+    });
+    renderTimelineEditDraft();
+  });
+}
+
+if (timelineEditSaveBtn) {
+  timelineEditSaveBtn.addEventListener('click', () => {
+    void saveTimelineEditModal();
+  });
+}
+
 function updateToggleLabel() {
   if (!timerToggleBtn) return;
   if (timerRunning) {
@@ -1949,14 +2690,21 @@ async function persistTimerState() {
     bellPhase,
     savedAt: Date.now()
   };
+  writeLocalJson(TIMER_STATE_LOCAL_KEY, value);
   await setMeta('timer', value);
 }
 
 async function restoreTimerState() {
-  const record = await getMeta('timer');
-  if (!record || !record.value) return;
-  const value = record.value;
-  if (!value.durationMs || !value.remainingMs) return;
+  const localValue = readLocalJson(TIMER_STATE_LOCAL_KEY);
+  const record = localValue ? null : await getMeta('timer');
+  const value = localValue || (record ? record.value : null);
+  if (!value) return;
+  if (
+    !Number.isFinite(value.durationMs) ||
+    !Number.isFinite(value.remainingMs) ||
+    value.durationMs < 0 ||
+    value.remainingMs < 0
+  ) return;
   timerDurationMs = value.durationMs;
   timerRemainingMs = value.remainingMs;
   if (timerMinutesInput) timerMinutesInput.value = Math.floor(timerDurationMs / 60000);
@@ -1967,17 +2715,27 @@ async function restoreTimerState() {
     if (timerRemainingMs <= 0) {
       timerRunning = false;
       setTimerStatus('倒计时结束');
+      activeTimerSegment = null;
+      void persistActiveTimerSegment();
     } else {
       timerRunning = true;
       timerStartAt = Date.now();
       resetBellSchedule(Date.now());
+      if (!activeTimerSegment) {
+        startTimerTimelineSegment(Date.now() - elapsed);
+      }
     }
   } else {
     timerRunning = false;
+    if (activeTimerSegment && activeTimerSegment.state !== 'paused') {
+      activeTimerSegment = null;
+      void persistActiveTimerSegment();
+    }
   }
 
   updateTimerUI(timerRemainingMs);
   updateToggleLabel();
+  renderTimerTimeline();
   if (timerRunning) {
     updateTimerLease();
     if (ownsTimerLease) {
@@ -1986,7 +2744,7 @@ async function restoreTimerState() {
   }
 }
 
-restoreTimerState();
+restoreTimerTimeline().then(restoreTimerState);
 
 async function restoreAlarmVolume() {
   const record = await getMeta('alarmVolume');

@@ -7,7 +7,7 @@
   <link rel="stylesheet" href="style.css?v=20260316-bgm-recover" />
   <link rel="manifest" href="app/manifest.json?v=20260316-bgm-recover" />
 </head>
-<body>
+<body class="dark">
   <button id="theme-toggle" class="theme-toggle" type="button" aria-label="切换主题">☾</button>
   <button id="bgm-toggle" class="bgm-toggle" type="button" aria-label="BGM 设置">♪</button>
   <div class="page-card">
@@ -143,6 +143,13 @@
     <p id="summary-status" aria-live="polite"></p>
     <div class="contribution-card">
       <div class="contribution-header">
+        <h3 id="timer-timeline-title">当日工作时间段</h3>
+        <span id="timer-timeline-summary" class="contribution-summary"></span>
+      </div>
+      <div id="timer-timeline-chart" class="timer-timeline-chart" aria-label="当日工作时间段可视化图"></div>
+    </div>
+    <div class="contribution-card">
+      <div class="contribution-header">
         <h3 id="contribution-title">2026上半年热力图</h3>
         <span id="contribution-summary" class="contribution-summary"></span>
       </div>
@@ -182,6 +189,30 @@
       <div class="bgm-volume">
         <label for="alarm-volume">铃声音量</label>
         <input id="alarm-volume" type="range" min="0" max="100" value="15" />
+      </div>
+    </div>
+  </div>
+
+  <div id="timeline-edit-modal" class="modal-overlay hidden" role="dialog" aria-modal="true">
+    <div class="modal-card timeline-edit-card">
+      <div class="modal-header">
+        <h3 id="timeline-edit-title">修改时间段</h3>
+        <button id="timeline-edit-close" type="button" class="modal-close">关闭</button>
+      </div>
+      <div id="timeline-edit-list" class="timeline-edit-list"></div>
+      <div class="timeline-edit-actions">
+        <button id="timeline-edit-add" type="button" class="header-action timeline-edit-add" aria-label="增加时间片段">+</button>
+        <button id="timeline-edit-save" type="button" class="progress-btn timeline-edit-save">保存</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="prompt-modal" class="modal-overlay hidden" role="dialog" aria-modal="true">
+    <div class="modal-card prompt-card">
+      <div id="prompt-message" class="prompt-message"></div>
+      <div class="prompt-actions">
+        <button id="prompt-cancel" type="button" class="modal-close">取消</button>
+        <button id="prompt-confirm" type="button" class="progress-btn prompt-confirm">确定</button>
       </div>
     </div>
   </div>
