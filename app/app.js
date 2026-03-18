@@ -1401,50 +1401,66 @@ function autoResizeSummary() {
   summaryInput.style.height = `${summaryInput.scrollHeight}px`;
 }
 
-function scheduleSummarySave() {
-  if (summarySaveTimer) clearTimeout(summarySaveTimer);
-  summarySaveTimer = setTimeout(saveSummaryNow, 600);
-}
-
-async function saveSummaryNow() {
-  const text = summaryInput.value.trim();
-  const now = new Date().toISOString();
-  const existing = summaries
+function getLatestSummaryRecord(summaryList = summaries) {
+  return summaryList
     .filter(summary => !summary.deletedAt)
     .sort((a, b) => {
       const aTime = Date.parse(a.updatedAt || a.createdAt || 0);
       const bTime = Date.parse(b.updatedAt || b.createdAt || 0);
       return bTime - aTime;
     })[0];
+}
+
+function scheduleSummarySave() {
+  if (summarySaveTimer) clearTimeout(summarySaveTimer);
+  summarySaveTimer = setTimeout(saveSummaryNow, 2000);
+}
+
+async function saveSummaryNow() {
+  if (summarySaveTimer) {
+    clearTimeout(summarySaveTimer);
+    summarySaveTimer = null;
+  }
+  const text = summaryInput.value.trim();
+  const now = new Date().toISOString();
+  const existing = getLatestSummaryRecord();
 
   if (!text && summaryRatingValue === 0) {
     if (existing) {
-      await updateSummary({
+      const nextSummary = {
         ...existing,
         deletedAt: now,
         updatedAt: now
-      });
+      };
+      await updateSummary(nextSummary);
+      summaries = summaries.map(summary =>
+        summary.id === nextSummary.id ? nextSummary : summary
+      );
       triggerChangeSync();
       setSummaryStatus('已清空');
-      loadSummaries();
+      await renderContributionChart();
     }
     return;
   }
 
   if (existing) {
-    await updateSummary({
+    const nextSummary = {
       ...existing,
       text,
       rating: summaryRatingValue,
       updatedAt: now,
       deletedAt: null
-    });
+    };
+    await updateSummary(nextSummary);
+    summaries = summaries.map(summary =>
+      summary.id === nextSummary.id ? nextSummary : summary
+    );
     triggerChangeSync();
   } else {
     const initResult = syncInitPromise ? await syncInitPromise : null;
     const userId = currentUserId ||
       (initResult && initResult.userId ? initResult.userId : ensureUserId());
-    await addSummary({
+    const nextSummary = {
       date: selectedDate,
       text,
       rating: summaryRatingValue,
@@ -1453,17 +1469,23 @@ async function saveSummaryNow() {
       deletedAt: null,
       uuid: generateUUID(),
       userId
-    });
+    };
+    const id = await addSummary(nextSummary);
+    summaries = [...summaries, { ...nextSummary, id }];
     triggerChangeSync();
   }
   setSummaryStatus('已保存');
-  loadSummaries();
+  await renderContributionChart();
 }
 
 
 summaryInput.addEventListener('input', () => {
   autoResizeSummary();
   scheduleSummarySave();
+});
+
+summaryInput.addEventListener('blur', () => {
+  void saveSummaryNow();
 });
 
 // -------- Date module --------
