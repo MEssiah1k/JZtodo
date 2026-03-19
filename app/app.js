@@ -466,6 +466,29 @@ async function carryOverIncomplete(fromDate, toDate) {
   if (hasChanges) triggerChangeSync();
 }
 
+async function moveTodoToTomorrow(todo) {
+  if (!todo || todo.deletedAt) return false;
+  const sourceDate = todo.date || selectedDate;
+  const tomorrowDate = formatDateLocal(shiftDate(parseDateLocal(sourceDate), 1));
+  const now = new Date().toISOString();
+
+  await updateTodo({
+    ...todo,
+    date: tomorrowDate,
+    completed: false,
+    recurrenceRuleId: null,
+    updatedAt: now
+  });
+
+  if (todo.recurrenceRuleId != null) {
+    await addRecurrenceSkip(sourceDate, Number(todo.recurrenceRuleId));
+  }
+
+  await clearTodoInProgress(todo.uuid);
+  triggerChangeSync();
+  return true;
+}
+
 function renderTodos() {
   list.innerHTML = '';
   if (completedList) completedList.innerHTML = '';
@@ -552,8 +575,19 @@ function renderTodos() {
       if (changed) loadTodos();
     };
 
+    const moveBtn = document.createElement('button');
+    moveBtn.className = 'move-btn';
+    moveBtn.type = 'button';
+    moveBtn.textContent = '移至明天';
+    moveBtn.onclick = async event => {
+      event.stopPropagation();
+      const changed = await moveTodoToTomorrow(todo);
+      if (changed) loadTodos();
+    };
+
     const actions = document.createElement('div');
     actions.className = 'todo-actions';
+    actions.appendChild(moveBtn);
     actions.appendChild(progressBtn);
     actions.appendChild(del);
     li.appendChild(content);
@@ -2562,6 +2596,7 @@ function setSyncStatus(text) {
 const initPromise = initSync({
   onStatus: setSyncStatus,
   onUpdate: updatedDates => {
+    loadRecurrenceRules();
     if (updatedDates.has(selectedDate)) {
       loadForDate();
     }

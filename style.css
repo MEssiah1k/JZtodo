@@ -844,6 +844,7 @@ section {
   gap: 8px;
 }
 
+.move-btn,
 .progress-btn,
 .delete-btn {
   margin-left: 0;
@@ -856,6 +857,14 @@ section {
   pointer-events: none;
   transition: opacity 0.15s ease;
   white-space: nowrap;
+}
+
+.move-btn {
+  background: #f59e0b;
+}
+
+.move-btn:hover {
+  background: #d97706;
 }
 
 .progress-btn {
@@ -884,12 +893,16 @@ section {
 }
 
 #todo-list li:hover .delete-btn,
+#todo-list li:hover .move-btn,
 #todo-list li:hover .progress-btn,
 #todo-list li:focus-within .delete-btn,
+#todo-list li:focus-within .move-btn,
 #todo-list li:focus-within .progress-btn,
 #completed-list li:hover .delete-btn,
+#completed-list li:hover .move-btn,
 #completed-list li:hover .progress-btn,
 #completed-list li:focus-within .delete-btn,
+#completed-list li:focus-within .move-btn,
 #completed-list li:focus-within .progress-btn {
   opacity: 1;
   pointer-events: auto;

@@ -12,6 +12,7 @@ import {
   getRecurrenceRulesUpdatedBetween,
   getSummaryByUuid,
   getRecurrenceRuleByUuid,
+  getTodosByRuleId,
   addTodo,
   updateTodo,
   addSummary,
@@ -29,6 +30,14 @@ let userId = null;
 let lastSyncAt = '1970-01-01T00:00:00.000Z';
 let statusHandler = () => {};
 let updateHandler = () => {};
+
+function getTodayDateStr() {
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, '0');
+  const d = String(now.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
 const DEBUG = true;
 
 function generateUUID() {
@@ -249,7 +258,7 @@ export async function syncNow() {
     lastSyncAt = syncCutoff;
     await setMeta('lastSyncAt', lastSyncAt);
     setStatus('Idle', `last ${lastSyncAt}`);
-    if (updatedDates.size) updateHandler(updatedDates);
+    updateHandler(updatedDates);
   } catch (err) {
     if (DEBUG) console.log('[sync] error', err);
     setStatus('Error');
@@ -287,7 +296,7 @@ export async function pullNow() {
     lastSyncAt = new Date().toISOString();
     await setMeta('lastSyncAt', lastSyncAt);
     setStatus('Idle', `last ${lastSyncAt}`);
-    if (updatedDates.size) updateHandler(updatedDates);
+    updateHandler(updatedDates);
   } catch (err) {
     if (DEBUG) console.log('[sync] pull-only error', err);
     setStatus('Error');
@@ -334,7 +343,7 @@ export async function syncAllLocalToCloud() {
     lastSyncAt = new Date().toISOString();
     await setMeta('lastSyncAt', lastSyncAt);
     setStatus('Idle', `last ${lastSyncAt}`);
-    if (dedupedBeforePush.size) updateHandler(dedupedBeforePush);
+    updateHandler(dedupedBeforePush);
   } catch (err) {
     if (DEBUG) console.log('[sync] full push error', err);
     setStatus('Error');
@@ -437,6 +446,26 @@ async function overwriteRemoteRecurrenceRulesFromLocal(forcedUpdatedAt = null) {
   }
 }
 
+async function syncDeletedRuleTodos(ruleId, updatedDates) {
+  if (ruleId == null) return;
+  const today = getTodayDateStr();
+  const relatedTodos = await getTodosByRuleId(ruleId);
+  const now = new Date().toISOString();
+
+  for (const todo of relatedTodos) {
+    if (!todo || todo.deletedAt) continue;
+    if (!todo.date || todo.date <= today) continue;
+    await updateTodo({
+      ...todo,
+      deletedAt: now,
+      updatedAt: now
+    });
+    if (updatedDates && todo.date) {
+      updatedDates.add(todo.date);
+    }
+  }
+}
+
 export async function pullRemoteChanges() {
   const updatedDates = new Set();
   const localTodos = await getAllTodos();
@@ -513,11 +542,17 @@ export async function pullRemoteChanges() {
       const remote = mapRecurrenceRuleFromRemote(row);
       const local = await getRecurrenceRuleByUuid(remote.uuid);
       if (!local) {
-        await addRecurrenceRule(remote);
+        const id = await addRecurrenceRule(remote);
+        if (remote.deletedAt) {
+          await syncDeletedRuleTodos(id, updatedDates);
+        }
         continue;
       }
       if ((remote.updatedAt || '') > (local.updatedAt || '')) {
         await updateRecurrenceRule({ ...local, ...remote, id: local.id });
+        if (remote.deletedAt) {
+          await syncDeletedRuleTodos(local.id, updatedDates);
+        }
       }
     }
   }
