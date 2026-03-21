@@ -100,6 +100,7 @@ const TIMER_TIMELINE_META_KEY = 'timerTimelineByDate';
 const TIMER_TIMELINE_ACTIVE_META_KEY = 'timerTimelineActive';
 const TIMER_TIMELINE_UPDATED_AT_META_KEY = 'timerTimelineUpdatedAt';
 const TIMER_TIMELINE_ACTIVE_UPDATED_AT_META_KEY = 'timerTimelineActiveUpdatedAt';
+const TIMER_TIMELINE_HISTORY_DELETE_SYNC_KEY = 'timerTimelineHistoryDeleteSync';
 const TIMER_STATE_LOCAL_KEY = 'pwaTodo.timerState';
 const TIMER_TIMELINE_LOCAL_KEY = 'pwaTodo.timerTimelineByDate';
 const TIMER_TIMELINE_ACTIVE_LOCAL_KEY = 'pwaTodo.timerTimelineActive';
@@ -2124,9 +2125,12 @@ function deleteTimerTimelineSegment(segmentId) {
 
   if (!changed) return;
   timerTimelineByDate = nextTimelineByDate;
-  void persistTimerTimelineHistory();
-  triggerChangeSync();
-  renderTimerTimeline();
+  void (async () => {
+    await persistTimerTimelineHistory();
+    await setMeta(TIMER_TIMELINE_HISTORY_DELETE_SYNC_KEY, 'true');
+    triggerChangeSync();
+    renderTimerTimeline();
+  })();
 }
 
 function closeTimelineEditModal() {

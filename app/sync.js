@@ -35,6 +35,7 @@ const TIMER_TIMELINE_META_KEY = 'timerTimelineByDate';
 const TIMER_TIMELINE_ACTIVE_META_KEY = 'timerTimelineActive';
 const TIMER_TIMELINE_UPDATED_AT_META_KEY = 'timerTimelineUpdatedAt';
 const TIMER_TIMELINE_ACTIVE_UPDATED_AT_META_KEY = 'timerTimelineActiveUpdatedAt';
+const TIMER_TIMELINE_HISTORY_DELETE_SYNC_KEY = 'timerTimelineHistoryDeleteSync';
 const TIMER_TIMELINE_LOCAL_KEY = 'pwaTodo.timerTimelineByDate';
 const TIMER_TIMELINE_ACTIVE_LOCAL_KEY = 'pwaTodo.timerTimelineActive';
 const MAX_AUTO_DEDUPE_DELETE_COUNT = 50;
@@ -412,6 +413,7 @@ export async function pushLocalTimerTimeline(afterIso = lastSyncAt, upToIso = nu
   const activeRecord = await getMeta(TIMER_TIMELINE_ACTIVE_META_KEY);
   const historyUpdatedAtRecord = await getMeta(TIMER_TIMELINE_UPDATED_AT_META_KEY);
   const activeUpdatedAtRecord = await getMeta(TIMER_TIMELINE_ACTIVE_UPDATED_AT_META_KEY);
+  const historyDeleteSyncRecord = await getMeta(TIMER_TIMELINE_HISTORY_DELETE_SYNC_KEY);
 
   const historyValue = historyRecord ? historyRecord.value : null;
   const activeValue = activeRecord ? activeRecord.value : null;
@@ -421,6 +423,10 @@ export async function pushLocalTimerTimeline(afterIso = lastSyncAt, upToIso = nu
   const activeUpdatedAt = activeUpdatedAtRecord && typeof activeUpdatedAtRecord.value === 'string'
     ? activeUpdatedAtRecord.value
     : '';
+  const shouldReplaceRemoteHistory = Boolean(
+    historyDeleteSyncRecord &&
+    historyDeleteSyncRecord.value === 'true'
+  );
 
   const hasHistory = historyValue && typeof historyValue === 'object';
   const hasActive = activeRecord && 'value' in activeRecord;
@@ -443,17 +449,20 @@ export async function pushLocalTimerTimeline(afterIso = lastSyncAt, upToIso = nu
   const pushAt = new Date().toISOString();
   const payload = [];
   if (shouldPushHistory) {
+    const nextHistoryValue = shouldReplaceRemoteHistory
+      ? (historyValue || {})
+      : await buildMergedTimerTimelineHistory(historyValue || {});
     payload.push({
       key: TIMER_TIMELINE_META_KEY,
-      value: historyValue || {},
-      updated_at: force && upToIso ? upToIso : (historyUpdatedAt || pushAt)
+      value: nextHistoryValue,
+      updated_at: force && upToIso ? upToIso : pushAt
     });
   }
   if (shouldPushActive) {
     payload.push({
       key: TIMER_TIMELINE_ACTIVE_META_KEY,
       value: activeValue ?? null,
-      updated_at: force && upToIso ? upToIso : (activeUpdatedAt || pushAt)
+      updated_at: force && upToIso ? upToIso : pushAt
     });
   }
 
@@ -465,12 +474,76 @@ export async function pushLocalTimerTimeline(afterIso = lastSyncAt, upToIso = nu
     throw error;
   }
 
-  if (shouldPushHistory && !historyUpdatedAt) {
+  if (shouldPushHistory) {
     await setMeta(TIMER_TIMELINE_UPDATED_AT_META_KEY, pushAt);
+    if (shouldReplaceRemoteHistory) {
+      await setMeta(TIMER_TIMELINE_HISTORY_DELETE_SYNC_KEY, 'false');
+    }
   }
-  if (shouldPushActive && !activeUpdatedAt) {
+  if (shouldPushActive) {
     await setMeta(TIMER_TIMELINE_ACTIVE_UPDATED_AT_META_KEY, pushAt);
   }
+}
+
+async function buildMergedTimerTimelineHistory(localHistory) {
+  const remoteHistory = await getRemoteTimerTimelineHistory();
+  if (!remoteHistory) return localHistory;
+
+  const mergedEntries = new Map();
+  const mergeDateSegments = segments => {
+    const byId = new Map();
+    for (const segment of Array.isArray(segments) ? segments : []) {
+      if (!segment || !segment.id) continue;
+      byId.set(segment.id, segment);
+    }
+    return Array.from(byId.values()).sort(compareTimerTimelineSegment);
+  };
+
+  for (const [dateStr, segments] of Object.entries(remoteHistory)) {
+    mergedEntries.set(dateStr, mergeDateSegments(segments));
+  }
+
+  for (const [dateStr, segments] of Object.entries(localHistory || {})) {
+    const combined = [
+      ...(mergedEntries.get(dateStr) || []),
+      ...(Array.isArray(segments) ? segments : [])
+    ];
+    const merged = mergeDateSegments(combined);
+    if (merged.length) {
+      mergedEntries.set(dateStr, merged);
+    } else {
+      mergedEntries.delete(dateStr);
+    }
+  }
+
+  return Object.fromEntries(
+    Array.from(mergedEntries.entries()).sort((a, b) => a[0].localeCompare(b[0]))
+  );
+}
+
+async function getRemoteTimerTimelineHistory() {
+  const { data, error } = await supabase
+    .from('timer_timeline')
+    .select('value')
+    .eq('key', TIMER_TIMELINE_META_KEY)
+    .maybeSingle();
+  if (error) {
+    if (isMissingTable(error, 'timer_timeline')) return null;
+    throw error;
+  }
+  return data && data.value && typeof data.value === 'object'
+    ? data.value
+    : null;
+}
+
+function compareTimerTimelineSegment(a, b) {
+  const aSequence = Number.isFinite(a && a.sequence) ? a.sequence : Number.MAX_SAFE_INTEGER;
+  const bSequence = Number.isFinite(b && b.sequence) ? b.sequence : Number.MAX_SAFE_INTEGER;
+  if (aSequence !== bSequence) return aSequence - bSequence;
+  const aStartAt = Number.isFinite(a && a.startAt) ? a.startAt : 0;
+  const bStartAt = Number.isFinite(b && b.startAt) ? b.startAt : 0;
+  if (aStartAt !== bStartAt) return aStartAt - bStartAt;
+  return String(a && a.id ? a.id : '').localeCompare(String(b && b.id ? b.id : ''));
 }
 
 async function overwriteRemoteRecurrenceRulesFromLocal(forcedUpdatedAt = null) {
