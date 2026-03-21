@@ -64,6 +64,17 @@
       <h2>待办事项</h2>
       <button id="recurrence-open" type="button" class="header-action">重复规则</button>
     </div>
+    <div class="input-row todo-category-row">
+      <select id="todo-category" aria-label="选择任务种类">
+        <option value="Work" selected>Work</option>
+        <option value="Life">Life</option>
+        <option value="Health">Health</option>
+        <option value="Social">Social</option>
+        <option value="Growth">Growth</option>
+        <option value="Leisure">Leisure</option>
+        <option value="Plan">Plan</option>
+      </select>
+    </div>
     <div class="input-row">
       <input id="todo-input" placeholder="输入待办事项" />
       <button id="add-btn" type="button">添加</button>
@@ -84,6 +95,15 @@
       <ul id="recurrence-list"></ul>
       <div class="modal-divider"></div>
       <div class="modal-form">
+        <select id="recurrence-category" aria-label="选择重复任务种类">
+          <option value="Work" selected>Work</option>
+          <option value="Life">Life</option>
+          <option value="Health">Health</option>
+          <option value="Social">Social</option>
+          <option value="Growth">Growth</option>
+          <option value="Leisure">Leisure</option>
+          <option value="Plan">Plan</option>
+        </select>
         <input id="recurrence-text" placeholder="输入重复事项内容" />
         <div class="recurrence-frequency">
           <select id="recurrence-type">
@@ -132,7 +152,81 @@
             </select>
           </div>
         </div>
-        <button id="recurrence-add" type="button">新增</button>
+        <div class="recurrence-form-actions">
+          <button id="recurrence-add" type="button">新增</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="recurrence-edit-modal" class="modal-overlay hidden" role="dialog" aria-modal="true">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3>修改重复规则</h3>
+        <button id="recurrence-edit-close" type="button" class="modal-close">关闭</button>
+      </div>
+      <div class="modal-form">
+        <select id="recurrence-edit-category" aria-label="选择重复任务种类">
+          <option value="Work" selected>Work</option>
+          <option value="Life">Life</option>
+          <option value="Health">Health</option>
+          <option value="Social">Social</option>
+          <option value="Growth">Growth</option>
+          <option value="Leisure">Leisure</option>
+          <option value="Plan">Plan</option>
+        </select>
+        <input id="recurrence-edit-text" placeholder="输入重复事项内容" />
+        <div class="recurrence-frequency">
+          <select id="recurrence-edit-type">
+            <option value="daily">每天重复</option>
+            <option value="weekly">每周重复</option>
+            <option value="monthly">每月重复</option>
+            <option value="yearly">每年重复</option>
+            <option value="workday">每个工作日重复</option>
+            <option value="custom">自定义重复</option>
+          </select>
+          <div id="recurrence-edit-weekly" class="hidden">
+            <span class="recurrence-label">星期</span>
+            <label><input type="checkbox" value="1" />一</label>
+            <label><input type="checkbox" value="2" />二</label>
+            <label><input type="checkbox" value="3" />三</label>
+            <label><input type="checkbox" value="4" />四</label>
+            <label><input type="checkbox" value="5" />五</label>
+            <label><input type="checkbox" value="6" />六</label>
+            <label><input type="checkbox" value="0" />日</label>
+          </div>
+          <div id="recurrence-edit-monthly" class="hidden">
+            <span class="recurrence-label">日期</span>
+            <select id="recurrence-edit-day"></select>
+          </div>
+          <div id="recurrence-edit-yearly" class="hidden">
+            <span class="recurrence-label">月</span>
+            <select id="recurrence-edit-month"></select>
+            <span class="recurrence-label">日</span>
+            <select id="recurrence-edit-year-day"></select>
+          </div>
+          <div id="recurrence-edit-custom" class="hidden">
+            <select id="recurrence-edit-interval">
+              <option value="1">每 1</option>
+              <option value="2">每 2</option>
+              <option value="3">每 3</option>
+              <option value="4">每 4</option>
+              <option value="5">每 5</option>
+              <option value="6">每 6</option>
+              <option value="7">每 7</option>
+            </select>
+            <select id="recurrence-edit-unit">
+              <option value="day">天</option>
+              <option value="week">周</option>
+              <option value="month">月</option>
+              <option value="year">年</option>
+            </select>
+          </div>
+        </div>
+        <div class="recurrence-form-actions">
+          <button id="recurrence-edit-cancel" type="button">取消</button>
+          <button id="recurrence-edit-save" type="button">保存</button>
+        </div>
       </div>
     </div>
   </div>

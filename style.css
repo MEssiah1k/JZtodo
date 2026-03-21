@@ -676,17 +676,28 @@ section {
 }
 
 
+#todo-category,
 #todo-input {
   width: 100%;
   min-width: 0;
   padding: 6px 10px;
+  box-sizing: border-box;
   border: 1px solid var(--border);
   border-radius: 8px;
   font-size: 14px;
-  height: 26px;
-  line-height: 26px;
+  height: 40px;
+  line-height: 1.2;
   background: var(--input);
   color: var(--text);
+}
+
+#todo-category {
+  width: 110px;
+  flex: 0 0 110px;
+}
+
+.todo-category-row {
+  justify-content: flex-start;
 }
 
 .input-row {
@@ -706,11 +717,12 @@ section {
 
 #todo-due {
   padding: 6px 10px;
+  box-sizing: border-box;
   border: 1px solid var(--border);
   border-radius: 8px;
   font-size: 14px;
-  height: 26px;
-  line-height: 26px;
+  height: 40px;
+  line-height: 1.2;
   width: 100%;
   background: var(--input);
   color: var(--text);
@@ -859,6 +871,18 @@ section {
   white-space: nowrap;
 }
 
+.edit-btn {
+  margin-left: 0;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--btn);
+  color: var(--text);
+  cursor: pointer;
+  transition: opacity 0.15s ease, background 0.15s ease, border-color 0.15s ease;
+  white-space: nowrap;
+}
+
 .move-btn {
   background: #f59e0b;
 }
@@ -890,6 +914,11 @@ section {
 
 .delete-btn:hover {
   background: #dc2626;
+}
+
+.edit-btn:hover {
+  background: var(--input);
+  border-color: color-mix(in srgb, var(--text) 20%, var(--border) 80%);
 }
 
 #todo-list li:hover .delete-btn,
@@ -1004,14 +1033,27 @@ section {
   pointer-events: none;
 }
 
+#recurrence-list .edit-btn {
+  opacity: 0;
+  pointer-events: none;
+}
+
 #recurrence-list li:hover .delete-btn,
-#recurrence-list li:focus-within .delete-btn {
+#recurrence-list li:focus-within .delete-btn,
+#recurrence-list li:hover .edit-btn,
+#recurrence-list li:focus-within .edit-btn {
   opacity: 1;
   pointer-events: auto;
 }
 
 .recurrence-text {
   flex: 1;
+}
+
+.recurrence-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .modal-divider {
@@ -1025,7 +1067,10 @@ section {
   gap: 10px;
 }
 
-#recurrence-text {
+#recurrence-category,
+#recurrence-text,
+#recurrence-edit-category,
+#recurrence-edit-text {
   padding: 8px 10px;
   border: 1px solid var(--border);
   border-radius: 8px;
@@ -1048,7 +1093,13 @@ section {
 #recurrence-unit,
 #recurrence-day,
 #recurrence-month,
-#recurrence-year-day {
+#recurrence-year-day,
+#recurrence-edit-type,
+#recurrence-edit-interval,
+#recurrence-edit-unit,
+#recurrence-edit-day,
+#recurrence-edit-month,
+#recurrence-edit-year-day {
   padding: 8px 10px;
   border: 1px solid var(--border);
   border-radius: 8px;
@@ -1056,13 +1107,22 @@ section {
   color: var(--text);
 }
 
-#recurrence-add {
+#recurrence-add,
+#recurrence-edit-save,
+#recurrence-edit-cancel {
   padding: 8px 12px;
   border: 1px solid var(--border);
   border-radius: 8px;
   background: var(--btn);
   color: var(--text);
   cursor: pointer;
+}
+
+.recurrence-form-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
 }
 
 #recurrence-weekly,

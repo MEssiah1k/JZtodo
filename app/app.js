@@ -12,6 +12,7 @@ import {
   setMeta,
   getAllRecurrenceRules,
   addRecurrenceRule,
+  updateRecurrenceRule,
   deleteRecurrenceRule,
   getTodosByRuleId
 } from './db.js';
@@ -19,6 +20,7 @@ import * as bgm from './bgm.js';
 import { initSync, syncNow, pushNow, pullNow, syncAllLocalToCloud, getUserId } from './sync.js';
 
 const input = document.getElementById('todo-input');
+const todoCategory = document.getElementById('todo-category');
 const dueInput = document.getElementById('todo-due');
 const addBtn = document.getElementById('add-btn');
 const list = document.getElementById('todo-list');
@@ -64,6 +66,7 @@ const recurrenceOpenBtn = document.getElementById('recurrence-open');
 const recurrenceModal = document.getElementById('recurrence-modal');
 const recurrenceCloseBtn = document.getElementById('recurrence-close');
 const recurrenceList = document.getElementById('recurrence-list');
+const recurrenceCategory = document.getElementById('recurrence-category');
 const recurrenceText = document.getElementById('recurrence-text');
 const recurrenceType = document.getElementById('recurrence-type');
 const recurrenceCustom = document.getElementById('recurrence-custom');
@@ -76,6 +79,22 @@ const recurrenceYearDay = document.getElementById('recurrence-year-day');
 const recurrenceInterval = document.getElementById('recurrence-interval');
 const recurrenceUnit = document.getElementById('recurrence-unit');
 const recurrenceAddBtn = document.getElementById('recurrence-add');
+const recurrenceEditModal = document.getElementById('recurrence-edit-modal');
+const recurrenceEditCloseBtn = document.getElementById('recurrence-edit-close');
+const recurrenceEditCategory = document.getElementById('recurrence-edit-category');
+const recurrenceEditText = document.getElementById('recurrence-edit-text');
+const recurrenceEditType = document.getElementById('recurrence-edit-type');
+const recurrenceEditCustom = document.getElementById('recurrence-edit-custom');
+const recurrenceEditWeekly = document.getElementById('recurrence-edit-weekly');
+const recurrenceEditMonthly = document.getElementById('recurrence-edit-monthly');
+const recurrenceEditDay = document.getElementById('recurrence-edit-day');
+const recurrenceEditYearly = document.getElementById('recurrence-edit-yearly');
+const recurrenceEditMonth = document.getElementById('recurrence-edit-month');
+const recurrenceEditYearDay = document.getElementById('recurrence-edit-year-day');
+const recurrenceEditInterval = document.getElementById('recurrence-edit-interval');
+const recurrenceEditUnit = document.getElementById('recurrence-edit-unit');
+const recurrenceEditSaveBtn = document.getElementById('recurrence-edit-save');
+const recurrenceEditCancelBtn = document.getElementById('recurrence-edit-cancel');
 const themeToggleBtn = document.getElementById('theme-toggle');
 
 const timerRemainingEl = document.getElementById('timer-remaining');
@@ -117,6 +136,7 @@ let summaries = [];
 let selectedDate = formatDateLocal(new Date());
 let migrationDone = false;
 let recurrenceRules = [];
+let editingRecurrenceRuleId = null;
 const MAX_IN_PROGRESS_TODOS = 2;
 const IN_PROGRESS_META_KEY = 'todoInProgress';
 let inProgressTodos = new Map();
@@ -795,6 +815,28 @@ function setStatus(message) {
   }
 }
 
+function formatTodoText(category, text) {
+  const safeCategory = typeof category === 'string' && category.trim()
+    ? category.trim()
+    : 'Work';
+  return `${safeCategory}:${text}`;
+}
+
+function parseCategorizedText(text) {
+  const raw = typeof text === 'string' ? text.trim() : '';
+  const match = raw.match(/^(Work|Life|Health|Social|Growth|Leisure|Plan):(.*)$/);
+  if (!match) {
+    return {
+      category: 'Work',
+      text: raw
+    };
+  }
+  return {
+    category: match[1],
+    text: match[2].trim()
+  };
+}
+
 addBtn.onclick = async () => {
   const text = input.value.trim();
   if (!text) {
@@ -816,7 +858,7 @@ addBtn.onclick = async () => {
     (initResult && initResult.userId ? initResult.userId : ensureUserId());
   await addTodo({
     date: selectedDate,
-    text,
+    text: formatTodoText(todoCategory ? todoCategory.value : 'Work', text),
     completed: false,
     createdAt: now,
     updatedAt: now,
@@ -1406,6 +1448,126 @@ async function addRecurrenceSkip(dateStr, ruleId) {
   await setMeta(RECURRENCE_SKIP_META_KEY, value);
 }
 
+function resetRecurrenceForm() {
+  if (recurrenceCategory) recurrenceCategory.value = 'Work';
+  if (recurrenceText) recurrenceText.value = '';
+  if (recurrenceType) recurrenceType.value = 'daily';
+  if (recurrenceInterval) recurrenceInterval.value = '1';
+  if (recurrenceUnit) recurrenceUnit.value = 'day';
+  if (recurrenceDay) recurrenceDay.value = '1';
+  if (recurrenceMonth) recurrenceMonth.value = '1';
+  if (recurrenceYearDay) recurrenceYearDay.value = '1';
+  if (recurrenceWeekly) {
+    recurrenceWeekly.querySelectorAll('input[type="checkbox"]').forEach(el => {
+      el.checked = false;
+    });
+  }
+  toggleRecurrenceCustom();
+}
+
+function resetRecurrenceEditForm() {
+  editingRecurrenceRuleId = null;
+  if (recurrenceEditCategory) recurrenceEditCategory.value = 'Work';
+  if (recurrenceEditText) recurrenceEditText.value = '';
+  if (recurrenceEditType) recurrenceEditType.value = 'daily';
+  if (recurrenceEditInterval) recurrenceEditInterval.value = '1';
+  if (recurrenceEditUnit) recurrenceEditUnit.value = 'day';
+  if (recurrenceEditDay) recurrenceEditDay.value = '1';
+  if (recurrenceEditMonth) recurrenceEditMonth.value = '1';
+  if (recurrenceEditYearDay) recurrenceEditYearDay.value = '1';
+  if (recurrenceEditWeekly) {
+    recurrenceEditWeekly.querySelectorAll('input[type="checkbox"]').forEach(el => {
+      el.checked = false;
+    });
+  }
+  toggleRecurrenceEditCustom();
+}
+
+function fillRecurrenceEditForm(rule) {
+  if (!rule) return;
+  editingRecurrenceRuleId = rule.id;
+  const parsed = parseCategorizedText(rule.text);
+  if (recurrenceEditCategory) recurrenceEditCategory.value = parsed.category;
+  if (recurrenceEditText) recurrenceEditText.value = parsed.text;
+  if (recurrenceEditType) recurrenceEditType.value = rule.type || 'daily';
+  if (recurrenceEditInterval) recurrenceEditInterval.value = String(rule.interval || 1);
+  if (recurrenceEditUnit) recurrenceEditUnit.value = rule.unit || 'day';
+  if (recurrenceEditDay && Number.isFinite(Number(rule.day))) recurrenceEditDay.value = String(rule.day);
+  if (recurrenceEditMonth && Number.isFinite(Number(rule.month))) recurrenceEditMonth.value = String(rule.month);
+  if (recurrenceEditYearDay && Number.isFinite(Number(rule.day))) recurrenceEditYearDay.value = String(rule.day);
+  if (recurrenceEditWeekly) {
+    const selected = new Set(Array.isArray(rule.weekdays) ? rule.weekdays.map(Number) : []);
+    recurrenceEditWeekly.querySelectorAll('input[type="checkbox"]').forEach(el => {
+      el.checked = selected.has(Number(el.value));
+    });
+  }
+  toggleRecurrenceEditCustom();
+}
+
+function openRecurrenceEditModal(rule) {
+  if (!recurrenceEditModal || !rule) return;
+  fillRecurrenceEditForm(rule);
+  recurrenceEditModal.classList.remove('hidden');
+}
+
+function closeRecurrenceEditModal() {
+  resetRecurrenceEditForm();
+  if (recurrenceEditModal) recurrenceEditModal.classList.add('hidden');
+}
+
+async function syncFutureRecurringTodos(ruleId, nextText) {
+  if (!Number.isFinite(Number(ruleId))) return;
+  const today = getTodayDateStr();
+  const related = await getTodosByRuleId(ruleId);
+  const targets = related.filter(todo =>
+    !todo.deletedAt &&
+    !todo.completed &&
+    todo.date >= today
+  );
+  if (!targets.length) return;
+  const now = new Date().toISOString();
+  await Promise.all(
+    targets.map(todo =>
+      updateTodo({
+        ...todo,
+        text: nextText,
+        updatedAt: now
+      })
+    )
+  );
+}
+
+function collectRecurrenceFormValue(fields) {
+  const text = fields.text ? fields.text.value.trim() : '';
+  if (!text) return null;
+  const type = fields.type ? fields.type.value : 'daily';
+  let weekdays = null;
+  let day = null;
+  let month = null;
+  if (type === 'weekly' && fields.weekly) {
+    const selected = Array.from(
+      fields.weekly.querySelectorAll('input[type="checkbox"]:checked')
+    ).map(el => Number(el.value));
+    if (!selected.length) return null;
+    weekdays = selected;
+  }
+  if (type === 'yearly' && fields.month && fields.yearDay) {
+    month = Number(fields.month.value);
+    day = Number(fields.yearDay.value);
+  } else if (type === 'monthly' && fields.day) {
+    day = Number(fields.day.value);
+  }
+  return {
+    text: formatTodoText(fields.category ? fields.category.value : 'Work', text),
+    type,
+    weekdays,
+    day,
+    month,
+    interval: type === 'custom' && fields.interval ? Number(fields.interval.value) : null,
+    unit: type === 'custom' && fields.unit ? fields.unit.value : null
+  };
+}
+
 function renderRecurrenceRules() {
   if (!recurrenceList) return;
   recurrenceList.innerHTML = '';
@@ -1415,6 +1577,15 @@ function renderRecurrenceRules() {
     const text = document.createElement('span');
     text.className = 'recurrence-text';
     text.textContent = `${rule.text} · ${formatRecurrence(rule)}`;
+
+    const edit = document.createElement('button');
+    edit.className = 'edit-btn';
+    edit.type = 'button';
+    edit.textContent = '修改';
+    edit.onclick = event => {
+      event.stopPropagation();
+      openRecurrenceEditModal(rule);
+    };
 
     const del = document.createElement('button');
     del.className = 'delete-btn';
@@ -1439,8 +1610,13 @@ function renderRecurrenceRules() {
       loadRecurrenceRules();
     };
 
+    const actions = document.createElement('div');
+    actions.className = 'recurrence-actions';
+    actions.appendChild(edit);
+    actions.appendChild(del);
+
     li.appendChild(text);
-    li.appendChild(del);
+    li.appendChild(actions);
     recurrenceList.appendChild(li);
   });
 }
@@ -1585,52 +1761,95 @@ function toggleRecurrenceCustom() {
   }
 }
 
+function toggleRecurrenceEditCustom() {
+  const type = recurrenceEditType ? recurrenceEditType.value : '';
+  if (recurrenceEditCustom) {
+    recurrenceEditCustom.classList.toggle('hidden', type !== 'custom');
+  }
+  if (recurrenceEditWeekly) {
+    recurrenceEditWeekly.classList.toggle('hidden', type !== 'weekly');
+  }
+  if (recurrenceEditMonthly) {
+    recurrenceEditMonthly.classList.toggle('hidden', type !== 'monthly');
+  }
+  if (recurrenceEditYearly) {
+    recurrenceEditYearly.classList.toggle('hidden', type !== 'yearly');
+  }
+}
+
 if (recurrenceType) recurrenceType.addEventListener('change', toggleRecurrenceCustom);
+if (recurrenceEditType) recurrenceEditType.addEventListener('change', toggleRecurrenceEditCustom);
 
 if (recurrenceAddBtn) {
   recurrenceAddBtn.addEventListener('click', async () => {
-    const text = recurrenceText.value.trim();
-    if (!text) return;
     const now = new Date().toISOString();
-    const type = recurrenceType.value;
-    let weekdays = null;
-    let day = null;
-    let month = null;
-    if (type === 'weekly' && recurrenceWeekly) {
-      const selected = Array.from(
-        recurrenceWeekly.querySelectorAll('input[type=\"checkbox\"]:checked')
-      ).map(el => Number(el.value));
-      if (!selected.length) return;
-      weekdays = selected;
+    const rule = collectRecurrenceFormValue({
+      category: recurrenceCategory,
+      text: recurrenceText,
+      type: recurrenceType,
+      weekly: recurrenceWeekly,
+      day: recurrenceDay,
+      month: recurrenceMonth,
+      yearDay: recurrenceYearDay,
+      interval: recurrenceInterval,
+      unit: recurrenceUnit
+    });
+    if (!rule) {
+      setStatus('请完善重复规则内容');
+      return;
     }
-    if (type === 'yearly' && recurrenceMonth && recurrenceYearDay) {
-      month = Number(recurrenceMonth.value);
-      day = Number(recurrenceYearDay.value);
-    } else if (type === 'monthly' && recurrenceDay) {
-      day = Number(recurrenceDay.value);
-    }
-    const rule = {
-      text,
-      type,
-      weekdays,
-      day,
-      month,
-      interval: type === 'custom' ? Number(recurrenceInterval.value) : null,
-      unit: type === 'custom' ? recurrenceUnit.value : null,
-      createdAt: now,
+    await addRecurrenceRule({
+      ...rule,
       updatedAt: now,
       deletedAt: null,
+      createdAt: now,
       uuid: generateUUID()
-    };
-    await addRecurrenceRule(rule);
+    });
     triggerChangeSync();
-    recurrenceText.value = '';
-    if (recurrenceWeekly) {
-      recurrenceWeekly.querySelectorAll('input[type=\"checkbox\"]').forEach(el => {
-        el.checked = false;
-      });
+    resetRecurrenceForm();
+    await loadRecurrenceRules();
+  });
+}
+
+if (recurrenceEditSaveBtn) {
+  recurrenceEditSaveBtn.addEventListener('click', async () => {
+    if (editingRecurrenceRuleId == null) {
+      setStatus('未找到要修改的重复规则');
+      return;
     }
-    loadRecurrenceRules();
+    const current = recurrenceRules.find(item => item.id === editingRecurrenceRuleId);
+    if (!current) {
+      setStatus('重复规则已失效，请重新打开');
+      return;
+    }
+    const now = new Date().toISOString();
+    const rule = collectRecurrenceFormValue({
+      category: recurrenceEditCategory,
+      text: recurrenceEditText,
+      type: recurrenceEditType,
+      weekly: recurrenceEditWeekly,
+      day: recurrenceEditDay,
+      month: recurrenceEditMonth,
+      yearDay: recurrenceEditYearDay,
+      interval: recurrenceEditInterval,
+      unit: recurrenceEditUnit
+    });
+    if (!rule) {
+      setStatus('请完善重复规则内容');
+      return;
+    }
+    await updateRecurrenceRule({
+      ...current,
+      ...rule,
+      updatedAt: now,
+      deletedAt: null,
+      createdAt: current.createdAt || now
+    });
+    await syncFutureRecurringTodos(current.id, rule.text);
+    triggerChangeSync();
+    await loadRecurrenceRules();
+    await loadForDate();
+    closeRecurrenceEditModal();
   });
 }
 
@@ -1638,20 +1857,38 @@ if (recurrenceOpenBtn) {
   recurrenceOpenBtn.addEventListener('click', () => {
     if (!recurrenceModal) return;
     recurrenceModal.classList.remove('hidden');
-    toggleRecurrenceCustom();
+    resetRecurrenceForm();
     loadRecurrenceRules();
   });
 }
 
 if (recurrenceCloseBtn) {
   recurrenceCloseBtn.addEventListener('click', () => {
+    resetRecurrenceForm();
     if (recurrenceModal) recurrenceModal.classList.add('hidden');
   });
 }
 
 if (recurrenceModal) {
   recurrenceModal.addEventListener('click', event => {
-    if (event.target === recurrenceModal) recurrenceModal.classList.add('hidden');
+    if (event.target === recurrenceModal) {
+      resetRecurrenceForm();
+      recurrenceModal.classList.add('hidden');
+    }
+  });
+}
+
+if (recurrenceEditCloseBtn) {
+  recurrenceEditCloseBtn.addEventListener('click', closeRecurrenceEditModal);
+}
+
+if (recurrenceEditCancelBtn) {
+  recurrenceEditCancelBtn.addEventListener('click', closeRecurrenceEditModal);
+}
+
+if (recurrenceEditModal) {
+  recurrenceEditModal.addEventListener('click', event => {
+    if (event.target === recurrenceEditModal) closeRecurrenceEditModal();
   });
 }
 
@@ -1665,7 +1902,8 @@ function setSummaryStatus(message) {
   }
 }
 
-if (recurrenceCustom) toggleRecurrenceCustom();
+if (recurrenceCustom) resetRecurrenceForm();
+if (recurrenceEditCustom) resetRecurrenceEditForm();
 
 function renderSummaryRating() {
   if (!summaryRating) return;
@@ -1726,6 +1964,33 @@ function buildRecurrenceDateOptions() {
       option.value = String(i);
       option.textContent = String(i);
       recurrenceYearDay.appendChild(option);
+    }
+  }
+  if (recurrenceEditDay) {
+    recurrenceEditDay.innerHTML = '';
+    for (let i = 1; i <= 31; i += 1) {
+      const option = document.createElement('option');
+      option.value = String(i);
+      option.textContent = String(i);
+      recurrenceEditDay.appendChild(option);
+    }
+  }
+  if (recurrenceEditMonth) {
+    recurrenceEditMonth.innerHTML = '';
+    for (let i = 1; i <= 12; i += 1) {
+      const option = document.createElement('option');
+      option.value = String(i);
+      option.textContent = String(i);
+      recurrenceEditMonth.appendChild(option);
+    }
+  }
+  if (recurrenceEditYearDay) {
+    recurrenceEditYearDay.innerHTML = '';
+    for (let i = 1; i <= 31; i += 1) {
+      const option = document.createElement('option');
+      option.value = String(i);
+      option.textContent = String(i);
+      recurrenceEditYearDay.appendChild(option);
     }
   }
 }
