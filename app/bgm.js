@@ -95,6 +95,11 @@ function safePlay() {
   if (playPromise && typeof playPromise.catch === 'function') {
     playPromise.catch(() => {
       retryOnNextInteraction = true;
+      if (!userInteracted) {
+        // 刷新恢复后的自动播放常被浏览器拦截，此时不要长期停留在“准备中”。
+        setPlaybackState('paused');
+        return;
+      }
       if (shouldBePlaying && userInteracted) {
         reloadBeforeNextPlay = true;
         scheduleRecovery();
