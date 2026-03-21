@@ -1247,6 +1247,44 @@ section {
   font-size: 14px;
 }
 
+.timer-inline-prompt {
+  margin-top: 2px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--bg) 72%, var(--card) 28%);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.timer-inline-prompt.hidden {
+  display: none;
+}
+
+.timer-inline-prompt-text {
+  color: var(--text);
+  font-size: 14px;
+}
+
+.timer-inline-prompt-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.timer-inline-prompt-actions button {
+  padding: 7px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--btn);
+  color: var(--text);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
 #timer-version {
   margin-top: 0;
   color: var(--muted);

@@ -82,6 +82,10 @@ const timerRemainingEl = document.getElementById('timer-remaining');
 const timerRingEl = document.getElementById('timer-ring');
 const timerMinutesInput = document.getElementById('timer-minutes');
 const timerStatusEl = document.getElementById('timer-status');
+const timerInlinePromptEl = document.getElementById('timer-inline-prompt');
+const timerInlinePromptTextEl = document.getElementById('timer-inline-prompt-text');
+const timerInlinePromptConfirmBtn = document.getElementById('timer-inline-prompt-confirm');
+const timerInlinePromptCancelBtn = document.getElementById('timer-inline-prompt-cancel');
 const bgmStatusEl = document.getElementById('bgm-status');
 const timerVersionEl = document.getElementById('timer-version');
 const timerToggleBtn = document.getElementById('timer-toggle');
@@ -93,7 +97,7 @@ const bgmCloseBtn = document.getElementById('bgm-close');
 const bgmCurrentName = document.getElementById('bgm-current-name');
 const bgmVolume = document.getElementById('bgm-volume');
 const alarmVolume = document.getElementById('alarm-volume');
-const APP_VERSION = 'v0.1.1';
+const APP_VERSION = 'v0.1.2';
 const RECURRENCE_SKIP_META_KEY = 'recurrenceSkips';
 const CONTRIBUTION_START_YEAR = 2026;
 const TIMER_TIMELINE_META_KEY = 'timerTimelineByDate';
@@ -1933,6 +1937,7 @@ setSelectedDate(selectedDate);
 
 // -------- Timer module --------
 const DEFAULT_MINUTES = 90;
+const DEFAULT_REST_MINUTES = 20;
 const TIMER_TIMELINE_COLORS = [
   '#0f766e',
   '#f97316',
@@ -1948,12 +1953,14 @@ let timerInterval = null;
 let timerRunning = false;
 let timerRemainingMs = timerDurationMs;
 let timerStartAt = Date.now();
+let timerMode = 'work';
 let bellPhase = {
   state: 'work',
   restEndsAt: 0,
   nextBellAt: 0
 };
 let alarmVolumeRatio = 0.15;
+let timerInlinePromptAction = null;
 
 let audioContext = null;
 let lastPersistAt = 0;
@@ -2382,13 +2389,14 @@ function updateTimerLease() {
   if (claimTimerLease()) {
     ensureTimerTicking();
     if (!wasOwner) {
-      bgm.play();
+      if (timerMode === 'work') bgm.play();
+      else bgm.stop();
       tickTimer();
     }
     return;
   }
   clearTimerTicking();
-  bgm.pause();
+  bgm.stop();
   setTimerStatus('倒计时已在另一页面运行');
 }
 
@@ -2421,6 +2429,44 @@ function playTone(freq, durationMs) {
   }
 }
 
+function playToneWithFade(freq, startAt, durationMs, gainValue) {
+  if (!audioContext) return;
+  const osc = audioContext.createOscillator();
+  const gain = audioContext.createGain();
+  osc.type = 'sine';
+  osc.frequency.value = freq;
+  gain.gain.setValueAtTime(0.0001, startAt);
+  gain.gain.linearRampToValueAtTime(gainValue, startAt + 0.08);
+  gain.gain.linearRampToValueAtTime(gainValue * 0.88, startAt + Math.max(0.16, durationMs / 1000 - 0.18));
+  gain.gain.linearRampToValueAtTime(0.0001, startAt + durationMs / 1000);
+  osc.connect(gain);
+  gain.connect(audioContext.destination);
+  osc.start(startAt);
+  osc.stop(startAt + durationMs / 1000);
+}
+
+function playRestEndAlarm() {
+  try {
+    if (!audioContext) {
+      audioContext = new (window.AudioContext || window.webkitAudioContext)();
+    }
+    const gainValue = Math.max(0.02, Math.min(0.9, bgm.getVolume()));
+    const startAt = audioContext.currentTime + 0.02;
+    const notes = [
+      { freq: 440, offset: 0, durationMs: 520 },
+      { freq: 554.37, offset: 0.42, durationMs: 520 },
+      { freq: 659.25, offset: 0.84, durationMs: 680 },
+      { freq: 554.37, offset: 1.46, durationMs: 540 },
+      { freq: 440, offset: 1.88, durationMs: 880 }
+    ];
+    notes.forEach(note => {
+      playToneWithFade(note.freq, startAt + note.offset, note.durationMs, gainValue);
+    });
+  } catch (err) {
+    // 静默降级
+  }
+}
+
 function setAlarmVolumePercent(value) {
   const parsed = Number(value);
   const safe = Number.isFinite(parsed) ? Math.max(0, Math.min(100, parsed)) : 15;
@@ -2442,12 +2488,96 @@ function setTimerStatus(text) {
   if (timerStatusEl) timerStatusEl.textContent = text;
 }
 
+function hideTimerInlinePrompt() {
+  timerInlinePromptAction = null;
+  if (timerInlinePromptEl) timerInlinePromptEl.classList.add('hidden');
+}
+
+function showTimerInlinePrompt(message, options = {}) {
+  if (!timerInlinePromptEl || !timerInlinePromptTextEl || !timerInlinePromptConfirmBtn || !timerInlinePromptCancelBtn) {
+    return;
+  }
+  timerInlinePromptTextEl.textContent = message;
+  timerInlinePromptConfirmBtn.textContent = options.confirmText || '确定';
+  timerInlinePromptCancelBtn.textContent = options.cancelText || '取消';
+  timerInlinePromptCancelBtn.classList.toggle('hidden', options.showCancel === false);
+  timerInlinePromptAction = typeof options.onConfirm === 'function' ? options.onConfirm : null;
+  timerInlinePromptEl.classList.remove('hidden');
+}
+
 function resetBellSchedule(now) {
   bellPhase = {
     state: 'work',
     restEndsAt: 0,
     nextBellAt: now + randomBellSeconds() * 1000
   };
+}
+
+function setTimerMode(nextMode) {
+  timerMode = nextMode === 'rest' ? 'rest' : 'work';
+}
+
+function prepareWorkTimer(minutes = DEFAULT_MINUTES) {
+  timerDurationMs = minutes * 60 * 1000;
+  timerRemainingMs = timerDurationMs;
+  setTimerMode('work');
+  if (timerMinutesInput) timerMinutesInput.value = minutes;
+  updateTimerUI(timerRemainingMs);
+}
+
+function prepareRestTimer(minutes = DEFAULT_REST_MINUTES) {
+  timerDurationMs = minutes * 60 * 1000;
+  timerRemainingMs = timerDurationMs;
+  setTimerMode('rest');
+  if (timerMinutesInput) timerMinutesInput.value = minutes;
+  updateTimerUI(timerRemainingMs);
+}
+
+function startRestTimer() {
+  hideTimerInlinePrompt();
+  const now = Date.now();
+  prepareRestTimer(DEFAULT_REST_MINUTES);
+  timerRunning = true;
+  timerStartAt = now;
+  bellPhase = {
+    state: 'rest',
+    restEndsAt: 0,
+    nextBellAt: 0
+  };
+  setTimerStatus('休息中');
+  updateToggleLabel();
+  persistTimerState();
+  updateTimerLease();
+  if (ownsTimerLease) {
+    bgm.stop();
+    tickTimer();
+  }
+}
+
+function promptStartRest() {
+  showTimerInlinePrompt('工作已结束，是否开始 20 分钟休息？', {
+    confirmText: '开始休息',
+    cancelText: '取消',
+    onConfirm: () => {
+      startRestTimer();
+    }
+  });
+}
+
+function startDefaultWorkTimer() {
+  hideTimerInlinePrompt();
+  prepareWorkTimer(DEFAULT_MINUTES);
+  startTimer();
+}
+
+function promptResumeWork() {
+  showTimerInlinePrompt('休息已结束，是否继续工作？', {
+    confirmText: '确定',
+    cancelText: '取消',
+    onConfirm: () => {
+      startDefaultWorkTimer();
+    }
+  });
 }
 
 function tickTimer() {
@@ -2458,18 +2588,31 @@ function tickTimer() {
 
   if (remainingMs <= 0) {
     timerRunning = false;
-    timerDurationMs = DEFAULT_MINUTES * 60 * 1000;
-    timerRemainingMs = timerDurationMs;
-    if (timerMinutesInput) timerMinutesInput.value = DEFAULT_MINUTES;
-    updateTimerUI(timerRemainingMs);
-    setTimerStatus('倒计时结束');
-    playTone(600, 800);
+    const finishedMode = timerMode;
+    prepareWorkTimer(DEFAULT_MINUTES);
+    setTimerStatus(finishedMode === 'rest' ? '休息结束' : '倒计时结束');
+    if (finishedMode === 'rest') {
+      playRestEndAlarm();
+      promptResumeWork();
+    } else {
+      playTone(600, 800);
+      promptStartRest();
+      finalizeTimerTimelineSegment('completed', now);
+    }
     updateToggleLabel();
     persistTimerState();
-    finalizeTimerTimelineSegment('completed', now);
     bgm.stop();
     releaseTimerLease();
     clearTimerTicking();
+    return;
+  }
+
+  if (timerMode === 'rest') {
+    setTimerStatus(`休息中，还剩 ${Math.ceil(remainingMs / 1000)} 秒`);
+    if (now - lastPersistAt > 5000) {
+      lastPersistAt = now;
+      persistTimerState();
+    }
     return;
   }
 
@@ -2506,15 +2649,25 @@ function startTimer() {
     timerRemainingMs = timerDurationMs;
   }
   const now = Date.now();
+  hideTimerInlinePrompt();
   timerRunning = true;
   timerStartAt = now;
-  resetBellSchedule(now);
-  startTimerTimelineSegment(now);
+  if (timerMode === 'work') {
+    resetBellSchedule(now);
+    startTimerTimelineSegment(now);
+  } else {
+    bellPhase = {
+      state: 'rest',
+      restEndsAt: 0,
+      nextBellAt: 0
+    };
+  }
   updateToggleLabel();
   persistTimerState();
   updateTimerLease();
   if (ownsTimerLease) {
-    bgm.play();
+    if (timerMode === 'work') bgm.play();
+    else bgm.stop();
     tickTimer();
   }
 }
@@ -2525,11 +2678,11 @@ function pauseTimer() {
   const remainingMs = Math.max(0, timerRemainingMs - (now - timerStartAt));
   timerRemainingMs = remainingMs;
   timerRunning = false;
-  setTimerStatus('已暂停');
+  setTimerStatus(timerMode === 'rest' ? '休息已暂停' : '已暂停');
   updateToggleLabel();
   persistTimerState();
-  pauseTimerTimelineSegment(now);
-  bgm.pause();
+  if (timerMode === 'work') pauseTimerTimelineSegment(now);
+  bgm.stop();
   releaseTimerLease();
   clearTimerTicking();
 }
@@ -2539,10 +2692,14 @@ function stopTimer() {
   timerRunning = false;
   timerRemainingMs = timerDurationMs;
   updateTimerUI(timerRemainingMs);
-  setTimerStatus('已结束');
+  setTimerStatus(timerMode === 'rest' ? '休息已结束' : '已结束');
   updateToggleLabel();
+  hideTimerInlinePrompt();
+  if (timerMode === 'work') {
+    finalizeTimerTimelineSegment('stopped', now);
+  }
+  prepareWorkTimer(DEFAULT_MINUTES);
   persistTimerState();
-  finalizeTimerTimelineSegment('stopped', now);
   bgm.stop();
   releaseTimerLease();
   clearTimerTicking();
@@ -2557,9 +2714,11 @@ function applyTimerMinutes(value) {
   timerDurationMs = Math.floor(parsed) * 60 * 1000;
   timerRemainingMs = timerDurationMs;
   timerRunning = false;
+  setTimerMode('work');
   updateTimerUI(timerRemainingMs);
   setTimerStatus('未开始');
   updateToggleLabel();
+  hideTimerInlinePrompt();
   persistTimerState();
   finalizeTimerTimelineSegment('stopped');
   bgm.stop();
@@ -2581,6 +2740,20 @@ if (timerToggleBtn) {
   });
 }
 if (timerStopBtn) timerStopBtn.addEventListener('click', stopTimer);
+
+if (timerInlinePromptConfirmBtn) {
+  timerInlinePromptConfirmBtn.addEventListener('click', () => {
+    const action = timerInlinePromptAction;
+    hideTimerInlinePrompt();
+    if (action) action();
+  });
+}
+
+if (timerInlinePromptCancelBtn) {
+  timerInlinePromptCancelBtn.addEventListener('click', () => {
+    hideTimerInlinePrompt();
+  });
+}
 
 updateTimerUI(timerRemainingMs);
 setTimerStatus('未开始');
@@ -2777,6 +2950,7 @@ async function persistTimerState() {
       : timerRemainingMs,
     running: timerRunning,
     startAt: timerRunning ? Date.now() : null,
+    mode: timerMode,
     bellPhase,
     savedAt: Date.now()
   };
@@ -2797,6 +2971,7 @@ async function restoreTimerState() {
   ) return;
   timerDurationMs = value.durationMs;
   timerRemainingMs = value.remainingMs;
+  setTimerMode(value.mode);
   if (timerMinutesInput) timerMinutesInput.value = Math.floor(timerDurationMs / 60000);
 
   if (value.running && value.startAt) {
@@ -2804,12 +2979,21 @@ async function restoreTimerState() {
     timerRemainingMs = Math.max(0, timerRemainingMs - elapsed);
     if (timerRemainingMs <= 0) {
       timerRunning = false;
-      setTimerStatus('倒计时结束');
+      prepareWorkTimer(DEFAULT_MINUTES);
+      setTimerStatus(value.mode === 'rest' ? '休息结束' : '倒计时结束');
     } else {
       timerRunning = true;
       timerStartAt = Date.now();
-      resetBellSchedule(Date.now());
-      if (!activeTimerSegment) {
+      if (timerMode === 'work') {
+        resetBellSchedule(Date.now());
+      } else {
+        bellPhase = {
+          state: 'rest',
+          restEndsAt: 0,
+          nextBellAt: 0
+        };
+      }
+      if (timerMode === 'work' && !activeTimerSegment) {
         startTimerTimelineSegment(Date.now() - elapsed);
       }
     }
@@ -2823,7 +3007,8 @@ async function restoreTimerState() {
   if (timerRunning) {
     updateTimerLease();
     if (ownsTimerLease) {
-      bgm.play();
+      if (timerMode === 'work') bgm.play();
+      else bgm.stop();
     }
   }
 }

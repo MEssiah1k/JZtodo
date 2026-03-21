@@ -175,6 +175,10 @@ export function setVolume(value) {
   if (audio) audio.volume = volume;
 }
 
+export function getVolume() {
+  return volume;
+}
+
 export function play() {
   ensureAudio();
   if (!audio.src) {

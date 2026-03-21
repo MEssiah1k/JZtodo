@@ -23,13 +23,20 @@
             <span id="timer-remaining">90:00</span>
           </div>
         </div>
-      <div class="timer-controls">
+        <div class="timer-controls">
         <label for="timer-minutes">时长（min）</label>
         <input id="timer-minutes" type="number" inputmode="numeric" min="1" step="1" value="90" />
         <button id="timer-toggle" type="button">开始</button>
         <button id="timer-stop" type="button">结束</button>
       </div>
         <div id="timer-status" aria-live="polite"></div>
+        <div id="timer-inline-prompt" class="timer-inline-prompt hidden" aria-live="polite">
+          <span id="timer-inline-prompt-text" class="timer-inline-prompt-text"></span>
+          <div class="timer-inline-prompt-actions">
+            <button id="timer-inline-prompt-confirm" type="button">确定</button>
+            <button id="timer-inline-prompt-cancel" type="button">取消</button>
+          </div>
+        </div>
         <div id="bgm-status" class="bgm-status" aria-live="polite">BGM：未播放</div>
       </div>
     </div>
