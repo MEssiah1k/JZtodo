@@ -37,6 +37,8 @@ const TIMER_TIMELINE_UPDATED_AT_META_KEY = 'timerTimelineUpdatedAt';
 const TIMER_TIMELINE_ACTIVE_UPDATED_AT_META_KEY = 'timerTimelineActiveUpdatedAt';
 const TIMER_TIMELINE_LOCAL_KEY = 'pwaTodo.timerTimelineByDate';
 const TIMER_TIMELINE_ACTIVE_LOCAL_KEY = 'pwaTodo.timerTimelineActive';
+const MAX_AUTO_DEDUPE_DELETE_COUNT = 50;
+const MAX_AUTO_DEDUPE_DELETE_RATIO = 0.3;
 
 function getTodayDateStr() {
   const now = new Date();
@@ -322,7 +324,6 @@ export async function syncAllLocalToCloud() {
     const fullSyncUpdatedAt = new Date().toISOString();
     if (DEBUG) console.log('[sync] dedupe local todos before full push');
     const dedupedBeforePush = await dedupeLocalTodosByNameAndStatus();
-
     const allTodos = await getAllTodos();
     const dedupedTodos = dedupeTodosForPush(allTodos);
     if (DEBUG) console.log('[sync] full todos to push', dedupedTodos.length);
@@ -795,26 +796,47 @@ async function dedupeLocalTodosByNameAndStatus() {
   const groups = new Map();
   const updatedDates = new Set();
   const now = new Date().toISOString();
+  const activeTodos = todos.filter(
+    todo =>
+      todo &&
+      !todo.deletedAt &&
+      todo.date &&
+      typeof todo.text === 'string' &&
+      todo.text.trim()
+  );
 
-  for (const todo of todos) {
-    if (!todo || todo.deletedAt) continue;
+  for (const todo of activeTodos) {
     const key = getDedupeKey(todo);
     if (!groups.has(key)) groups.set(key, []);
     groups.get(key).push(todo);
   }
 
+  const duplicates = [];
   for (const group of groups.values()) {
     if (group.length < 2) continue;
     group.sort(compareTodoForNameConflict);
-    const duplicates = group.slice(1);
-    for (const duplicate of duplicates) {
-      await updateTodo({
-        ...duplicate,
-        deletedAt: now,
-        updatedAt: now
+    duplicates.push(...group.slice(1));
+  }
+
+  // 自动去重需要保留，但必须避免异常数据触发大面积软删除。
+  if (shouldSkipAutoDedupe(duplicates.length, activeTodos.length)) {
+    if (DEBUG) {
+      console.warn('[sync] skip auto dedupe due to safety limit', {
+        duplicateCount: duplicates.length,
+        activeCount: activeTodos.length
       });
-      if (duplicate.date) updatedDates.add(duplicate.date);
     }
+    setStatus('Sync warning', 'skip bulk dedupe');
+    return updatedDates;
+  }
+
+  for (const duplicate of duplicates) {
+    await updateTodo({
+      ...duplicate,
+      deletedAt: now,
+      updatedAt: now
+    });
+    if (duplicate.date) updatedDates.add(duplicate.date);
   }
 
   return updatedDates;
@@ -824,6 +846,14 @@ function getDedupeKey(todo) {
   const date = todo && todo.date ? todo.date : '';
   const name = todo && typeof todo.text === 'string' ? todo.text.trim() : '';
   return `${date}__${name}`;
+}
+
+function shouldSkipAutoDedupe(duplicateCount, activeCount) {
+  if (!duplicateCount || !activeCount) return false;
+  return (
+    duplicateCount > MAX_AUTO_DEDUPE_DELETE_COUNT ||
+    duplicateCount / activeCount > MAX_AUTO_DEDUPE_DELETE_RATIO
+  );
 }
 
 function compareTodoForNameConflict(a, b) {

@@ -2769,8 +2769,6 @@ async function restoreTimerState() {
     if (timerRemainingMs <= 0) {
       timerRunning = false;
       setTimerStatus('倒计时结束');
-      activeTimerSegment = null;
-      void persistActiveTimerSegment();
     } else {
       timerRunning = true;
       timerStartAt = Date.now();
@@ -2781,10 +2779,6 @@ async function restoreTimerState() {
     }
   } else {
     timerRunning = false;
-    if (activeTimerSegment && activeTimerSegment.state !== 'paused') {
-      activeTimerSegment = null;
-      void persistActiveTimerSegment();
-    }
   }
 
   updateTimerUI(timerRemainingMs);
