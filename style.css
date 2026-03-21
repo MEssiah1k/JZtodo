@@ -941,6 +941,67 @@ section {
   margin-top: 18px;
 }
 
+.regret-coin-card {
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--bg);
+}
+
+.regret-coin-balance-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.regret-coin-label,
+.regret-coin-hint,
+.regret-coin-status {
+  color: var(--muted);
+}
+
+.regret-coin-balance {
+  font-size: 28px;
+  line-height: 1;
+  color: var(--text);
+}
+
+.regret-coin-status {
+  min-height: 20px;
+  margin: 10px 0 0;
+}
+
+.regret-coin-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+#regret-coin-spend-input {
+  width: 110px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--input);
+  color: var(--text);
+}
+
+#regret-coin-spend-btn {
+  padding: 10px 16px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--btn);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.regret-coin-hint {
+  margin: 10px 0 0;
+  font-size: 13px;
+}
+
 /* Modal */
 .modal-overlay {
   position: fixed;
@@ -1008,6 +1069,29 @@ section {
   background: var(--btn);
   color: var(--text);
   cursor: pointer;
+}
+
+.settlement-card {
+  width: min(520px, 92vw);
+}
+
+.settlement-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  color: var(--text);
+  line-height: 1.6;
+}
+
+.settlement-highlight {
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg);
+}
+
+.settlement-label {
+  color: var(--muted);
 }
 
 #recurrence-list {
@@ -1248,6 +1332,15 @@ section {
     width: 100%;
     flex-direction: row;
     flex-wrap: wrap;
+  }
+
+  .regret-coin-actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  #regret-coin-spend-input {
+    width: 100%;
   }
 }
 

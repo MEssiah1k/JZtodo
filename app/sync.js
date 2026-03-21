@@ -482,6 +482,61 @@ export async function pushLocalTimerTimeline(afterIso = lastSyncAt, upToIso = nu
   }
 }
 
+export async function fetchRemoteKv(key) {
+  if (!supabase) return null;
+  const { data, error } = await supabase
+    .from('timer_timeline')
+    .select('*')
+    .eq('key', key)
+    .maybeSingle();
+  if (error) {
+    if (isMissingTable(error, 'timer_timeline')) return null;
+    throw error;
+  }
+  return data || null;
+}
+
+export async function fetchRemoteKvsByPrefix(prefix) {
+  if (!supabase) return [];
+  const { data, error } = await supabase
+    .from('timer_timeline')
+    .select('*')
+    .like('key', `${prefix}%`)
+    .order('updated_at', { ascending: true });
+  if (error) {
+    if (isMissingTable(error, 'timer_timeline')) return [];
+    throw error;
+  }
+  return Array.isArray(data) ? data : [];
+}
+
+export async function upsertRemoteKv(key, value, updatedAt = new Date().toISOString()) {
+  if (!supabase) return false;
+  const { error } = await supabase
+    .from('timer_timeline')
+    .upsert([{ key, value, updated_at: updatedAt }], { onConflict: 'key' });
+  if (error) {
+    if (isMissingTable(error, 'timer_timeline')) return false;
+    throw error;
+  }
+  return true;
+}
+
+export async function insertRemoteKvIfAbsent(key, value, updatedAt = new Date().toISOString()) {
+  if (!supabase) return false;
+  const { error } = await supabase
+    .from('timer_timeline')
+    .insert([{ key, value, updated_at: updatedAt }]);
+  if (!error) return true;
+  const code = String(error.code || '');
+  const message = String(error.message || '');
+  if (code === '23505' || message.includes('duplicate key value violates unique constraint')) {
+    return false;
+  }
+  if (isMissingTable(error, 'timer_timeline')) return false;
+  throw error;
+}
+
 function normalizeTimerTimelineManualOps(value) {
   const next = value && typeof value === 'object' ? value : {};
   return {

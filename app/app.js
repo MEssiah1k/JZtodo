@@ -17,7 +17,18 @@ import {
   getTodosByRuleId
 } from './db.js';
 import * as bgm from './bgm.js';
-import { initSync, syncNow, pushNow, pullNow, syncAllLocalToCloud, getUserId } from './sync.js';
+import {
+  initSync,
+  syncNow,
+  pushNow,
+  pullNow,
+  syncAllLocalToCloud,
+  getUserId,
+  fetchRemoteKv,
+  fetchRemoteKvsByPrefix,
+  upsertRemoteKv,
+  insertRemoteKvIfAbsent
+} from './sync.js';
 
 const input = document.getElementById('todo-input');
 const todoCategory = document.getElementById('todo-category');
@@ -51,6 +62,9 @@ const promptModal = document.getElementById('prompt-modal');
 const promptMessage = document.getElementById('prompt-message');
 const promptCancelBtn = document.getElementById('prompt-cancel');
 const promptConfirmBtn = document.getElementById('prompt-confirm');
+const dailySettlementModal = document.getElementById('daily-settlement-modal');
+const dailySettlementBody = document.getElementById('daily-settlement-body');
+const dailySettlementCloseBtn = document.getElementById('daily-settlement-close');
 
 const datePrevBtn = document.getElementById('date-prev');
 const dateNextBtn = document.getElementById('date-next');
@@ -116,7 +130,11 @@ const bgmCloseBtn = document.getElementById('bgm-close');
 const bgmCurrentName = document.getElementById('bgm-current-name');
 const bgmVolume = document.getElementById('bgm-volume');
 const alarmVolume = document.getElementById('alarm-volume');
-const APP_VERSION = 'v0.1.2';
+const regretCoinBalanceEl = document.getElementById('regret-coin-balance');
+const regretCoinStatusEl = document.getElementById('regret-coin-status');
+const regretCoinSpendInput = document.getElementById('regret-coin-spend-input');
+const regretCoinSpendBtn = document.getElementById('regret-coin-spend-btn');
+const APP_VERSION = 'v0.1.3';
 const RECURRENCE_SKIP_META_KEY = 'recurrenceSkips';
 const CONTRIBUTION_START_YEAR = 2026;
 const TIMER_TIMELINE_META_KEY = 'timerTimelineByDate';
@@ -130,6 +148,11 @@ const TIMER_TIMELINE_ACTIVE_LOCAL_KEY = 'pwaTodo.timerTimelineActive';
 const TIMER_LEASE_KEY = 'pwaTodo.timerLease';
 const TIMER_LEASE_TTL_MS = 4000;
 const TIMER_LEASE_HEARTBEAT_MS = 2000;
+const REGRET_COIN_LEDGER_META_KEY = 'regretCoinLedger';
+const REGRET_COIN_LAST_SYNC_AT_META_KEY = 'regretCoinLedgerUpdatedAt';
+const REGRET_COIN_LEDGER_REMOTE_KEY = 'regret_coin_ledger';
+const DAILY_SETTLEMENT_REMOTE_PREFIX = 'daily_settlement:';
+const NATURAL_DAY_META_KEY = 'lastKnownNaturalDate';
 
 let todos = [];
 let summaries = [];
@@ -147,11 +170,14 @@ let contributionScores = new Map();
 let taskCompletionStatusByDate = new Map();
 let timerTimelineByDate = {};
 let activeTimerSegment = null;
+let regretCoinLedger = [];
 let timelineEditingSegmentId = null;
 let timelineEditingDate = '';
 let timelineEditingDraft = [];
 let timelineEditingInitialSnapshot = '';
 let promptResolver = null;
+let regretCoinStatusTimer = null;
+let daySettlementTimer = null;
 let contributionResizeRaf = 0;
 let contributionHalfKey = '';
 let contributionFollowCurrentHalf = true;
@@ -277,6 +303,332 @@ function openPromptModal(message, options = {}) {
   return new Promise(resolve => {
     promptResolver = resolve;
   });
+}
+
+function getYesterdayDateStr(baseDateStr = formatDateLocal(new Date())) {
+  return formatDateLocal(shiftDate(parseDateLocal(baseDateStr), -1));
+}
+
+function getDailySettlementKey(dateStr) {
+  return `${DAILY_SETTLEMENT_REMOTE_PREFIX}${dateStr}`;
+}
+
+function getTodayFocusCount(dateStr) {
+  return getTimerTimelineSegmentsForDate(dateStr)
+    .filter(segment => !segment._active)
+    .length;
+}
+
+function getSettlementLevel(rating) {
+  const normalized = Number.isFinite(rating) ? rating : 0;
+  return Math.max(0, Math.min(10, Math.round(normalized * 2)));
+}
+
+function getSettlementAction(level) {
+  if (level >= 10) {
+    return {
+      type: 'reward',
+      coins: 4,
+      text: '获得奖励：4 个后悔币'
+    };
+  }
+  if (level >= 9) {
+    return {
+      type: 'reward',
+      coins: 3,
+      text: '获得奖励：3 个后悔币'
+    };
+  }
+  if (level >= 8) {
+    return {
+      type: 'reward',
+      coins: 2,
+      text: '获得奖励：2 个后悔币'
+    };
+  }
+  if (level < 2) {
+    return {
+      type: 'penalty',
+      coins: 0,
+      text: '需要惩罚：400r投资'
+    };
+  }
+  if (level < 4) {
+    return {
+      type: 'penalty',
+      coins: 0,
+      text: '需要惩罚：200r投资'
+    };
+  }
+  if (level < 6) {
+    return {
+      type: 'penalty',
+      coins: 0,
+      text: '需要惩罚：100r投资'
+    };
+  }
+  return {
+    type: 'neutral',
+    coins: 0,
+    text: '无奖励，无惩罚'
+  };
+}
+
+function getSettlementEncouragement(level, actionType) {
+  if (actionType === 'reward') return '今天做得很稳，继续把高质量专注延续下去。';
+  if (actionType === 'penalty') return '今天没有达标，按规则执行惩罚，明天把节奏拉回来。';
+  if (level >= 6) return '已经过线了，再多一点稳定输出就能拿到奖励。';
+  return '先别找借口，明天至少把基础专注次数补回来。';
+}
+
+function normalizeRegretCoinLedger(value) {
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter(item => item && typeof item.id === 'string')
+    .map(item => ({
+      id: item.id,
+      type: item.type === 'spend' ? 'spend' : 'reward',
+      amount: Math.max(0, Math.floor(Number(item.amount) || 0)),
+      createdAt: typeof item.createdAt === 'string' ? item.createdAt : new Date().toISOString(),
+      sourceDate: typeof item.sourceDate === 'string' ? item.sourceDate : '',
+      note: typeof item.note === 'string' ? item.note : ''
+    }))
+    .sort((a, b) => (a.createdAt || '').localeCompare(b.createdAt || ''));
+}
+
+function mergeRegretCoinLedger(localLedger, remoteLedger) {
+  const merged = new Map();
+  for (const item of [...normalizeRegretCoinLedger(localLedger), ...normalizeRegretCoinLedger(remoteLedger)]) {
+    const existing = merged.get(item.id);
+    if (!existing || (item.createdAt || '') > (existing.createdAt || '')) {
+      merged.set(item.id, item);
+    }
+  }
+  return Array.from(merged.values()).sort((a, b) => (a.createdAt || '').localeCompare(b.createdAt || ''));
+}
+
+function getRegretCoinBalance(ledger = regretCoinLedger) {
+  return normalizeRegretCoinLedger(ledger).reduce((sum, item) => {
+    if (item.type === 'reward') return sum + item.amount;
+    if (item.type === 'spend') return sum - item.amount;
+    return sum;
+  }, 0);
+}
+
+async function persistRegretCoinLedger(updatedAt = new Date().toISOString()) {
+  const normalized = normalizeRegretCoinLedger(regretCoinLedger);
+  regretCoinLedger = normalized;
+  await Promise.all([
+    setMeta(REGRET_COIN_LEDGER_META_KEY, normalized),
+    setMeta(REGRET_COIN_LAST_SYNC_AT_META_KEY, updatedAt)
+  ]);
+}
+
+async function syncRegretCoinLedgerFromCloud() {
+  const [localRecord, localUpdatedAtRecord, remoteRow] = await Promise.all([
+    getMeta(REGRET_COIN_LEDGER_META_KEY),
+    getMeta(REGRET_COIN_LAST_SYNC_AT_META_KEY),
+    fetchRemoteKv(REGRET_COIN_LEDGER_REMOTE_KEY)
+  ]);
+  const localLedger = normalizeRegretCoinLedger(localRecord ? localRecord.value : []);
+  const remoteLedger = normalizeRegretCoinLedger(remoteRow && remoteRow.value ? remoteRow.value.ops : []);
+  const mergedLedger = mergeRegretCoinLedger(localLedger, remoteLedger);
+  const remoteUpdatedAt = remoteRow && remoteRow.updated_at ? remoteRow.updated_at : '';
+  const localUpdatedAt = localUpdatedAtRecord && typeof localUpdatedAtRecord.value === 'string'
+    ? localUpdatedAtRecord.value
+    : '';
+
+  regretCoinLedger = mergedLedger;
+  const remoteSnapshot = JSON.stringify(remoteLedger);
+  const mergedSnapshot = JSON.stringify(mergedLedger);
+  const mergedUpdatedAt = [remoteUpdatedAt, localUpdatedAt]
+    .filter(Boolean)
+    .sort()
+    .slice(-1)[0] || new Date().toISOString();
+  await persistRegretCoinLedger(mergedUpdatedAt);
+
+  if (syncReady && (remoteUpdatedAt < mergedUpdatedAt || remoteSnapshot !== mergedSnapshot)) {
+    await upsertRemoteKv(REGRET_COIN_LEDGER_REMOTE_KEY, { ops: mergedLedger }, mergedUpdatedAt);
+  }
+  renderRegretCoinSection();
+}
+
+async function reconcileSettlementRewardsFromCloud() {
+  if (!syncReady) return;
+  const rows = await fetchRemoteKvsByPrefix(DAILY_SETTLEMENT_REMOTE_PREFIX);
+  if (!rows.length) return;
+  const existingIds = new Set(normalizeRegretCoinLedger(regretCoinLedger).map(item => item.id));
+  const missingRewards = [];
+
+  rows.forEach(row => {
+    const value = row && row.value && typeof row.value === 'object' ? row.value : null;
+    if (!value || value.actionType !== 'reward' || !value.date || !value.regretCoinReward) return;
+    const rewardId = `reward:${value.date}`;
+    if (existingIds.has(rewardId)) return;
+    missingRewards.push({
+      id: rewardId,
+      type: 'reward',
+      amount: Math.max(0, Math.floor(Number(value.regretCoinReward) || 0)),
+      createdAt: value.settledAt || row.updated_at || new Date().toISOString(),
+      sourceDate: value.date,
+      note: '每日结算奖励'
+    });
+  });
+
+  if (!missingRewards.length) return;
+  regretCoinLedger = mergeRegretCoinLedger(regretCoinLedger, missingRewards);
+  const updatedAt = new Date().toISOString();
+  await persistRegretCoinLedger(updatedAt);
+  await upsertRemoteKv(REGRET_COIN_LEDGER_REMOTE_KEY, { ops: regretCoinLedger }, updatedAt);
+  renderRegretCoinSection();
+}
+
+function renderRegretCoinSection() {
+  if (regretCoinBalanceEl) {
+    regretCoinBalanceEl.textContent = String(Math.max(0, getRegretCoinBalance()));
+  }
+}
+
+function setRegretCoinStatus(message) {
+  if (!regretCoinStatusEl) return;
+  regretCoinStatusEl.textContent = message;
+  if (regretCoinStatusTimer) clearTimeout(regretCoinStatusTimer);
+  if (!message) return;
+  regretCoinStatusTimer = setTimeout(() => {
+    if (regretCoinStatusEl.textContent === message) regretCoinStatusEl.textContent = '';
+  }, 1800);
+}
+
+async function appendRegretCoinEntry(entry) {
+  await syncRegretCoinLedgerFromCloud();
+  regretCoinLedger = mergeRegretCoinLedger(regretCoinLedger, [entry]);
+  const updatedAt = entry.createdAt || new Date().toISOString();
+  await persistRegretCoinLedger(updatedAt);
+  if (syncReady) {
+    await upsertRemoteKv(REGRET_COIN_LEDGER_REMOTE_KEY, { ops: regretCoinLedger }, updatedAt);
+  }
+  renderRegretCoinSection();
+}
+
+async function consumeRegretCoins(amount) {
+  await syncRegretCoinLedgerFromCloud();
+  const balance = getRegretCoinBalance();
+  if (amount > balance) return false;
+  const createdAt = new Date().toISOString();
+  await appendRegretCoinEntry({
+    id: generateUUID(),
+    type: 'spend',
+    amount,
+    createdAt,
+    note: '手动消耗'
+  });
+  return true;
+}
+
+function buildDailySettlement(dateStr, rating, focusCount) {
+  const level = getSettlementLevel(rating);
+  const action = getSettlementAction(level);
+  return {
+    date: dateStr,
+    rating: Number.isFinite(rating) ? rating : 0,
+    level,
+    focusCount,
+    actionType: action.type,
+    actionText: action.text,
+    regretCoinReward: action.coins,
+    encouragement: getSettlementEncouragement(level, action.type),
+    settledAt: new Date().toISOString()
+  };
+}
+
+function openDailySettlementModal(settlement, balance) {
+  if (!dailySettlementModal || !dailySettlementBody) {
+    window.alert([
+      `日期：${settlement.date}`,
+      `专注次数：${settlement.focusCount}`,
+      settlement.actionText,
+      `目前后悔币：${balance}`,
+      `鼓励语：${settlement.encouragement}`
+    ].join('\n'));
+    return;
+  }
+  dailySettlementBody.innerHTML = '';
+  const lines = [
+    ['日期', settlement.date],
+    ['专注次数', `${settlement.focusCount}`],
+    ['星星等级', `${settlement.level}/10`],
+    ['结算结果', settlement.actionText],
+    ['目前后悔币个数', `${balance}`],
+    ['鼓励语', settlement.encouragement]
+  ];
+  lines.forEach(([label, value], index) => {
+    const row = document.createElement(index === 3 ? 'div' : 'p');
+    if (index === 3) row.className = 'settlement-highlight';
+    row.innerHTML = `<span class="settlement-label">${label}：</span>${value}`;
+    dailySettlementBody.appendChild(row);
+  });
+  dailySettlementModal.classList.remove('hidden');
+}
+
+function closeDailySettlementModal() {
+  if (dailySettlementModal) dailySettlementModal.classList.add('hidden');
+}
+
+async function settlePreviousDayIfNeeded(options = {}) {
+  if (!syncReady) return;
+  const today = formatDateLocal(new Date());
+  const localDayRecord = await getMeta(NATURAL_DAY_META_KEY);
+  const lastKnownDay = localDayRecord && typeof localDayRecord.value === 'string'
+    ? localDayRecord.value
+    : '';
+
+  if (!options.force && lastKnownDay === today) return;
+  await setMeta(NATURAL_DAY_META_KEY, today);
+
+  const targetDate = getYesterdayDateStr(today);
+  if (!targetDate) return;
+
+  const existingRemoteSettlement = await fetchRemoteKv(getDailySettlementKey(targetDate));
+  if (existingRemoteSettlement && existingRemoteSettlement.value) {
+    await syncRegretCoinLedgerFromCloud();
+    renderRegretCoinSection();
+    return;
+  }
+
+  const targetSummaries = await getSummariesByDate(targetDate);
+  const latestSummary = getLatestSummaryRecord(targetSummaries);
+  const rating = latestSummary && typeof latestSummary.rating === 'number' ? latestSummary.rating : 0;
+  const focusCount = getTodayFocusCount(targetDate);
+  const settlement = buildDailySettlement(targetDate, rating, focusCount);
+  await syncRegretCoinLedgerFromCloud();
+
+  const inserted = await insertRemoteKvIfAbsent(
+    getDailySettlementKey(targetDate),
+    settlement,
+    settlement.settledAt
+  );
+
+  if (!inserted) {
+    const remoteSettlement = await fetchRemoteKv(getDailySettlementKey(targetDate));
+    await syncRegretCoinLedgerFromCloud();
+    return;
+  }
+
+  let finalSettlement = settlement;
+  if (settlement.actionType === 'reward') {
+    await appendRegretCoinEntry({
+      id: `reward:${targetDate}`,
+      type: 'reward',
+      amount: settlement.regretCoinReward,
+      createdAt: settlement.settledAt,
+      sourceDate: targetDate,
+      note: '每日结算奖励'
+    });
+  } else {
+    renderRegretCoinSection();
+  }
+  const balance = Math.max(0, getRegretCoinBalance());
+  openDailySettlementModal(finalSettlement, balance);
 }
 
 function getContributionHalfPeriod(date = new Date()) {
@@ -2072,6 +2424,14 @@ async function restoreTheme() {
 
 restoreTheme();
 
+async function restoreRegretCoinLedgerLocal() {
+  const record = await getMeta(REGRET_COIN_LEDGER_META_KEY);
+  regretCoinLedger = normalizeRegretCoinLedger(record ? record.value : []);
+  renderRegretCoinSection();
+}
+
+void restoreRegretCoinLedgerLocal();
+
 function autoResizeSummary() {
   if (!summaryInput) return;
   summaryInput.style.height = 'auto';
@@ -3033,11 +3393,18 @@ window.addEventListener('storage', event => {
   updateTimerLease();
 });
 window.addEventListener('visibilitychange', () => {
-  if (!document.hidden) updateTimerLease();
+  if (!document.hidden) {
+    updateTimerLease();
+    void settlePreviousDayIfNeeded();
+    if (syncReady) void syncRegretCoinLedgerFromCloud().then(() => reconcileSettlementRewardsFromCloud());
+  }
 });
 window.addEventListener('pagehide', () => {
   if (ownsTimerLease) releaseTimerLease();
 });
+daySettlementTimer = window.setInterval(() => {
+  void settlePreviousDayIfNeeded();
+}, 60 * 1000);
 if (bgmCurrentName) bgmCurrentName.textContent = bgmName;
 if (bgmVolume) {
   bgm.setVolume(bgmVolume.value / 100);
@@ -3090,6 +3457,7 @@ const initPromise = initSync({
   onUpdate: updatedDates => {
     void restoreTimerTimeline();
     loadRecurrenceRules();
+    void syncRegretCoinLedgerFromCloud().then(() => reconcileSettlementRewardsFromCloud());
     if (updatedDates.has(selectedDate)) {
       loadForDate();
     }
@@ -3100,38 +3468,62 @@ syncInitPromise = initPromise;
 initPromise.then(result => {
   syncReady = true;
   currentUserId = result && result.userId ? result.userId : null;
+  void syncRegretCoinLedgerFromCloud()
+    .then(() => reconcileSettlementRewardsFromCloud())
+    .then(() => settlePreviousDayIfNeeded());
   if (pendingChangeSync) {
     void flushChangeSync();
   } else {
     setTimeout(() => {
       syncNow();
+      void syncRegretCoinLedgerFromCloud().then(() => reconcileSettlementRewardsFromCloud());
     }, 1200);
   }
   setInterval(() => {
-    if (syncReady) syncNow();
+    if (syncReady) {
+      syncNow();
+      void syncRegretCoinLedgerFromCloud().then(() => reconcileSettlementRewardsFromCloud());
+      void settlePreviousDayIfNeeded({ force: true });
+    }
   }, 5 * 60 * 1000);
 });
 
 if (syncBtn) {
   syncBtn.addEventListener('click', () => {
-    if (syncReady) syncNow();
+    if (syncReady) {
+      syncNow();
+      void syncRegretCoinLedgerFromCloud().then(() => reconcileSettlementRewardsFromCloud());
+      void settlePreviousDayIfNeeded({ force: true });
+    }
   });
 }
 
 if (syncPullBtn) {
   syncPullBtn.addEventListener('click', () => {
-    if (syncReady) pullNow();
+    if (syncReady) {
+      pullNow();
+      void syncRegretCoinLedgerFromCloud().then(() => reconcileSettlementRewardsFromCloud());
+      void settlePreviousDayIfNeeded({ force: true });
+    }
   });
 }
 
 if (syncFullBtn) {
   syncFullBtn.addEventListener('click', () => {
-    if (syncReady) syncAllLocalToCloud();
+    if (syncReady) {
+      syncAllLocalToCloud();
+      void syncRegretCoinLedgerFromCloud().then(() => reconcileSettlementRewardsFromCloud());
+      void settlePreviousDayIfNeeded({ force: true });
+    }
   });
 }
 
 window.addEventListener('online', () => {
-  if (syncReady) syncNow();
+  if (syncReady) {
+    syncNow();
+    void syncRegretCoinLedgerFromCloud().then(() => reconcileSettlementRewardsFromCloud());
+    void settlePreviousDayIfNeeded({ force: true });
+  }
 });
 
 if (bgmToggleBtn) {
@@ -3177,6 +3569,39 @@ if (promptConfirmBtn) {
 if (promptModal) {
   promptModal.addEventListener('click', event => {
     if (event.target === promptModal) resolvePrompt(false);
+  });
+}
+
+if (dailySettlementCloseBtn) {
+  dailySettlementCloseBtn.addEventListener('click', closeDailySettlementModal);
+}
+
+if (dailySettlementModal) {
+  dailySettlementModal.addEventListener('click', event => {
+    if (event.target === dailySettlementModal) closeDailySettlementModal();
+  });
+}
+
+if (regretCoinSpendBtn) {
+  regretCoinSpendBtn.addEventListener('click', async () => {
+    const amount = Math.floor(Number(regretCoinSpendInput ? regretCoinSpendInput.value : 0));
+    if (!Number.isFinite(amount) || amount <= 0) {
+      setRegretCoinStatus('请输入大于 0 的消耗数量');
+      return;
+    }
+    const success = await consumeRegretCoins(amount);
+    if (!success) {
+      setRegretCoinStatus('后悔币不够');
+      return;
+    }
+    if (regretCoinSpendInput) regretCoinSpendInput.value = '1';
+    setRegretCoinStatus(`已消耗 ${amount} 个后悔币`);
+  });
+}
+
+if (regretCoinSpendInput) {
+  regretCoinSpendInput.addEventListener('keydown', event => {
+    if (event.key === 'Enter' && regretCoinSpendBtn) regretCoinSpendBtn.click();
   });
 }
 
@@ -3304,7 +3729,7 @@ if ('serviceWorker' in navigator) {
     location.reload();
   };
 
-  navigator.serviceWorker.register('./sw.js?v=20260316-bgm-recover', { updateViaCache: 'none' }).then(reg => {
+  navigator.serviceWorker.register('./sw.js?v=20260321-daily-settlement', { updateViaCache: 'none' }).then(reg => {
     swRegistration = reg;
     reg.update();
     if (reg.waiting) promptForUpdate();
