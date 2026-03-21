@@ -31,6 +31,13 @@ let lastSyncAt = '1970-01-01T00:00:00.000Z';
 let statusHandler = () => {};
 let updateHandler = () => {};
 
+const TIMER_TIMELINE_META_KEY = 'timerTimelineByDate';
+const TIMER_TIMELINE_ACTIVE_META_KEY = 'timerTimelineActive';
+const TIMER_TIMELINE_UPDATED_AT_META_KEY = 'timerTimelineUpdatedAt';
+const TIMER_TIMELINE_ACTIVE_UPDATED_AT_META_KEY = 'timerTimelineActiveUpdatedAt';
+const TIMER_TIMELINE_LOCAL_KEY = 'pwaTodo.timerTimelineByDate';
+const TIMER_TIMELINE_ACTIVE_LOCAL_KEY = 'pwaTodo.timerTimelineActive';
+
 function getTodayDateStr() {
   const now = new Date();
   const y = now.getFullYear();
@@ -253,6 +260,8 @@ export async function syncNow() {
     await pushLocalSummaries(previousSyncAt, syncCutoff);
     if (DEBUG) console.log('[sync] overwrite recurrence rules (local -> cloud)');
     await overwriteRemoteRecurrenceRulesFromLocal();
+    if (DEBUG) console.log('[sync] push timer timeline');
+    await pushLocalTimerTimeline(previousSyncAt, syncCutoff);
 
     dedupedAfterPull.forEach(date => updatedDates.add(date));
     lastSyncAt = syncCutoff;
@@ -278,6 +287,8 @@ export async function pushNow() {
     await pushLocalSummaries(previousSyncAt, syncCutoff);
     if (DEBUG) console.log('[sync] push-only recurrence rules');
     await overwriteRemoteRecurrenceRulesFromLocal();
+    if (DEBUG) console.log('[sync] push-only timer timeline');
+    await pushLocalTimerTimeline(previousSyncAt, syncCutoff);
 
     lastSyncAt = syncCutoff;
     await setMeta('lastSyncAt', lastSyncAt);
@@ -339,6 +350,8 @@ export async function syncAllLocalToCloud() {
 
     if (DEBUG) console.log('[sync] overwrite recurrence rules (local -> cloud)');
     await overwriteRemoteRecurrenceRulesFromLocal(fullSyncUpdatedAt);
+    if (DEBUG) console.log('[sync] full push timer timeline');
+    await pushLocalTimerTimeline('1970-01-01T00:00:00.000Z', fullSyncUpdatedAt, true);
 
     lastSyncAt = new Date().toISOString();
     await setMeta('lastSyncAt', lastSyncAt);
@@ -390,6 +403,72 @@ export async function pushLocalRecurrenceRules(afterIso = lastSyncAt, upToIso = 
   if (error) {
     if (isMissingRecurrenceTable(error)) return;
     throw error;
+  }
+}
+
+export async function pushLocalTimerTimeline(afterIso = lastSyncAt, upToIso = null, force = false) {
+  const historyRecord = await getMeta(TIMER_TIMELINE_META_KEY);
+  const activeRecord = await getMeta(TIMER_TIMELINE_ACTIVE_META_KEY);
+  const historyUpdatedAtRecord = await getMeta(TIMER_TIMELINE_UPDATED_AT_META_KEY);
+  const activeUpdatedAtRecord = await getMeta(TIMER_TIMELINE_ACTIVE_UPDATED_AT_META_KEY);
+
+  const historyValue = historyRecord ? historyRecord.value : null;
+  const activeValue = activeRecord ? activeRecord.value : null;
+  const historyUpdatedAt = historyUpdatedAtRecord && typeof historyUpdatedAtRecord.value === 'string'
+    ? historyUpdatedAtRecord.value
+    : '';
+  const activeUpdatedAt = activeUpdatedAtRecord && typeof activeUpdatedAtRecord.value === 'string'
+    ? activeUpdatedAtRecord.value
+    : '';
+
+  const hasHistory = historyValue && typeof historyValue === 'object';
+  const hasActive = activeRecord && 'value' in activeRecord;
+
+  const shouldPushHistory = force || (
+    hasHistory && (
+      !historyUpdatedAt ||
+      (historyUpdatedAt > afterIso && (!upToIso || historyUpdatedAt <= upToIso))
+    )
+  );
+  const shouldPushActive = force || (
+    hasActive && (
+      !activeUpdatedAt ||
+      (activeUpdatedAt > afterIso && (!upToIso || activeUpdatedAt <= upToIso))
+    )
+  );
+
+  if (!shouldPushHistory && !shouldPushActive) return;
+
+  const pushAt = new Date().toISOString();
+  const payload = [];
+  if (shouldPushHistory) {
+    payload.push({
+      key: TIMER_TIMELINE_META_KEY,
+      value: historyValue || {},
+      updated_at: force && upToIso ? upToIso : (historyUpdatedAt || pushAt)
+    });
+  }
+  if (shouldPushActive) {
+    payload.push({
+      key: TIMER_TIMELINE_ACTIVE_META_KEY,
+      value: activeValue ?? null,
+      updated_at: force && upToIso ? upToIso : (activeUpdatedAt || pushAt)
+    });
+  }
+
+  const { error } = await supabase
+    .from('timer_timeline')
+    .upsert(payload, { onConflict: 'key' });
+  if (error) {
+    if (isMissingTable(error, 'timer_timeline')) return;
+    throw error;
+  }
+
+  if (shouldPushHistory && !historyUpdatedAt) {
+    await setMeta(TIMER_TIMELINE_UPDATED_AT_META_KEY, pushAt);
+  }
+  if (shouldPushActive && !activeUpdatedAt) {
+    await setMeta(TIMER_TIMELINE_ACTIVE_UPDATED_AT_META_KEY, pushAt);
   }
 }
 
@@ -556,7 +635,74 @@ export async function pullRemoteChanges() {
       }
     }
   }
+
+  const { data: timerRows, error: timerPullError } = await fetchAllRowsWithError('timer_timeline');
+  if (timerPullError) {
+    if (!isMissingTable(timerPullError, 'timer_timeline')) throw timerPullError;
+  } else if (Array.isArray(timerRows)) {
+    if (DEBUG) console.log('[sync] pull timer timeline', timerRows.length);
+    await applyRemoteTimerTimeline(timerRows, updatedDates);
+  }
+
   return updatedDates;
+}
+
+async function applyRemoteTimerTimeline(rows, updatedDates) {
+  const byKey = new Map();
+  for (const row of rows) {
+    if (row && row.key) byKey.set(row.key, row);
+  }
+
+  const historyRow = byKey.get(TIMER_TIMELINE_META_KEY) || null;
+  const activeRow = byKey.get(TIMER_TIMELINE_ACTIVE_META_KEY) || null;
+
+  if (historyRow) {
+    const localUpdatedAtRecord = await getMeta(TIMER_TIMELINE_UPDATED_AT_META_KEY);
+    const localUpdatedAt = localUpdatedAtRecord && typeof localUpdatedAtRecord.value === 'string'
+      ? localUpdatedAtRecord.value
+      : '';
+    const remoteUpdatedAt = historyRow.updated_at || '';
+    if (remoteUpdatedAt > localUpdatedAt) {
+      const historyValue = historyRow.value && typeof historyRow.value === 'object'
+        ? historyRow.value
+        : {};
+      await setMeta(TIMER_TIMELINE_META_KEY, historyValue);
+      await setMeta(TIMER_TIMELINE_UPDATED_AT_META_KEY, remoteUpdatedAt || new Date().toISOString());
+      writeLocalJson(TIMER_TIMELINE_LOCAL_KEY, historyValue);
+      Object.keys(historyValue).forEach(date => {
+        if (date) updatedDates.add(date);
+      });
+    }
+  }
+
+  if (activeRow) {
+    const localUpdatedAtRecord = await getMeta(TIMER_TIMELINE_ACTIVE_UPDATED_AT_META_KEY);
+    const localUpdatedAt = localUpdatedAtRecord && typeof localUpdatedAtRecord.value === 'string'
+      ? localUpdatedAtRecord.value
+      : '';
+    const remoteUpdatedAt = activeRow.updated_at || '';
+    if (remoteUpdatedAt > localUpdatedAt) {
+      const activeValue = activeRow.value ?? null;
+      await setMeta(TIMER_TIMELINE_ACTIVE_META_KEY, activeValue);
+      await setMeta(TIMER_TIMELINE_ACTIVE_UPDATED_AT_META_KEY, remoteUpdatedAt || new Date().toISOString());
+      writeLocalJson(TIMER_TIMELINE_ACTIVE_LOCAL_KEY, activeValue);
+      if (activeValue && activeValue.date) {
+        updatedDates.add(activeValue.date);
+      }
+    }
+  }
+}
+
+function writeLocalJson(key, value) {
+  try {
+    if (value == null) {
+      window.localStorage.removeItem(key);
+      return;
+    }
+    window.localStorage.setItem(key, JSON.stringify(value));
+  } catch (err) {
+    // ignore local persistence failures
+  }
 }
 
 async function fetchAllRows(table) {
@@ -716,13 +862,17 @@ function dedupeTodosForPush(todos) {
 }
 
 function isMissingRecurrenceTable(error) {
+  return isMissingTable(error, 'recurrence_rules');
+}
+
+function isMissingTable(error, tableName) {
   const text = String(
     (error && error.message) ||
     (error && error.details) ||
     (error && error.hint) ||
     ''
   );
-  return text.includes('recurrence_rules') && text.includes('does not exist');
+  return text.includes(tableName) && text.includes('does not exist');
 }
 async function getSupabase() {
   if (supabase) return supabase;

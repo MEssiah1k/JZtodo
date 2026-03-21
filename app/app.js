@@ -98,6 +98,8 @@ const RECURRENCE_SKIP_META_KEY = 'recurrenceSkips';
 const CONTRIBUTION_START_YEAR = 2026;
 const TIMER_TIMELINE_META_KEY = 'timerTimelineByDate';
 const TIMER_TIMELINE_ACTIVE_META_KEY = 'timerTimelineActive';
+const TIMER_TIMELINE_UPDATED_AT_META_KEY = 'timerTimelineUpdatedAt';
+const TIMER_TIMELINE_ACTIVE_UPDATED_AT_META_KEY = 'timerTimelineActiveUpdatedAt';
 const TIMER_STATE_LOCAL_KEY = 'pwaTodo.timerState';
 const TIMER_TIMELINE_LOCAL_KEY = 'pwaTodo.timerTimelineByDate';
 const TIMER_TIMELINE_ACTIVE_LOCAL_KEY = 'pwaTodo.timerTimelineActive';
@@ -1964,13 +1966,21 @@ function getTimerTimelineSequence(dateStr) {
 }
 
 async function persistTimerTimelineHistory() {
+  const updatedAt = new Date().toISOString();
   writeLocalJson(TIMER_TIMELINE_LOCAL_KEY, timerTimelineByDate);
-  await setMeta(TIMER_TIMELINE_META_KEY, timerTimelineByDate);
+  await Promise.all([
+    setMeta(TIMER_TIMELINE_META_KEY, timerTimelineByDate),
+    setMeta(TIMER_TIMELINE_UPDATED_AT_META_KEY, updatedAt)
+  ]);
 }
 
 async function persistActiveTimerSegment() {
+  const updatedAt = new Date().toISOString();
   writeLocalJson(TIMER_TIMELINE_ACTIVE_LOCAL_KEY, activeTimerSegment);
-  await setMeta(TIMER_TIMELINE_ACTIVE_META_KEY, activeTimerSegment);
+  await Promise.all([
+    setMeta(TIMER_TIMELINE_ACTIVE_META_KEY, activeTimerSegment),
+    setMeta(TIMER_TIMELINE_ACTIVE_UPDATED_AT_META_KEY, updatedAt)
+  ]);
 }
 
 async function restoreTimerTimeline() {
@@ -2008,6 +2018,7 @@ function startTimerTimelineSegment(now = Date.now()) {
       slices
     };
     void persistActiveTimerSegment();
+    triggerChangeSync();
     renderTimerTimeline();
     return;
   }
@@ -2024,6 +2035,7 @@ function startTimerTimelineSegment(now = Date.now()) {
     slices: [{ startAt: now, endAt: now }]
   };
   void persistActiveTimerSegment();
+  triggerChangeSync();
   renderTimerTimeline();
 }
 
@@ -2045,6 +2057,7 @@ function pauseTimerTimelineSegment(endAt = Date.now()) {
     slices
   };
   void persistActiveTimerSegment();
+  triggerChangeSync();
   renderTimerTimeline();
 }
 
@@ -2078,6 +2091,7 @@ function finalizeTimerTimelineSegment(state, endAt = Date.now()) {
   };
   activeTimerSegment = null;
   void Promise.all([persistTimerTimelineHistory(), persistActiveTimerSegment()]);
+  triggerChangeSync();
   renderTimerTimeline();
 }
 
@@ -2094,6 +2108,7 @@ function deleteTimerTimelineSegment(segmentId) {
     }
     activeTimerSegment = null;
     void persistActiveTimerSegment();
+    triggerChangeSync();
     renderTimerTimeline();
     return;
   }
@@ -2110,6 +2125,7 @@ function deleteTimerTimelineSegment(segmentId) {
   if (!changed) return;
   timerTimelineByDate = nextTimelineByDate;
   void persistTimerTimelineHistory();
+  triggerChangeSync();
   renderTimerTimeline();
 }
 
@@ -2240,6 +2256,7 @@ async function saveTimelineEditModal() {
   if (activeTimerSegment && activeTimerSegment.id === timelineEditingSegmentId) {
     activeTimerSegment = updateSegment(activeTimerSegment);
     await persistActiveTimerSegment();
+    triggerChangeSync();
     renderTimerTimeline();
     closeTimelineEditModal();
     return;
@@ -2259,6 +2276,7 @@ async function saveTimelineEditModal() {
 
   if (!changed) return;
   await persistTimerTimelineHistory();
+  triggerChangeSync();
   renderTimerTimeline();
   closeTimelineEditModal();
 }
@@ -2596,6 +2614,7 @@ function setSyncStatus(text) {
 const initPromise = initSync({
   onStatus: setSyncStatus,
   onUpdate: updatedDates => {
+    void restoreTimerTimeline();
     loadRecurrenceRules();
     if (updatedDates.has(selectedDate)) {
       loadForDate();
