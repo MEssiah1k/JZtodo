@@ -35,7 +35,7 @@ const TIMER_TIMELINE_META_KEY = 'timerTimelineByDate';
 const TIMER_TIMELINE_ACTIVE_META_KEY = 'timerTimelineActive';
 const TIMER_TIMELINE_UPDATED_AT_META_KEY = 'timerTimelineUpdatedAt';
 const TIMER_TIMELINE_ACTIVE_UPDATED_AT_META_KEY = 'timerTimelineActiveUpdatedAt';
-const TIMER_TIMELINE_HISTORY_DELETE_SYNC_KEY = 'timerTimelineHistoryDeleteSync';
+const TIMER_TIMELINE_MANUAL_OPS_KEY = 'timerTimelineManualOps';
 const TIMER_TIMELINE_LOCAL_KEY = 'pwaTodo.timerTimelineByDate';
 const TIMER_TIMELINE_ACTIVE_LOCAL_KEY = 'pwaTodo.timerTimelineActive';
 const MAX_AUTO_DEDUPE_DELETE_COUNT = 50;
@@ -413,7 +413,7 @@ export async function pushLocalTimerTimeline(afterIso = lastSyncAt, upToIso = nu
   const activeRecord = await getMeta(TIMER_TIMELINE_ACTIVE_META_KEY);
   const historyUpdatedAtRecord = await getMeta(TIMER_TIMELINE_UPDATED_AT_META_KEY);
   const activeUpdatedAtRecord = await getMeta(TIMER_TIMELINE_ACTIVE_UPDATED_AT_META_KEY);
-  const historyDeleteSyncRecord = await getMeta(TIMER_TIMELINE_HISTORY_DELETE_SYNC_KEY);
+  const manualOpsRecord = await getMeta(TIMER_TIMELINE_MANUAL_OPS_KEY);
 
   const historyValue = historyRecord ? historyRecord.value : null;
   const activeValue = activeRecord ? activeRecord.value : null;
@@ -423,9 +423,8 @@ export async function pushLocalTimerTimeline(afterIso = lastSyncAt, upToIso = nu
   const activeUpdatedAt = activeUpdatedAtRecord && typeof activeUpdatedAtRecord.value === 'string'
     ? activeUpdatedAtRecord.value
     : '';
-  const shouldReplaceRemoteHistory = Boolean(
-    historyDeleteSyncRecord &&
-    historyDeleteSyncRecord.value === 'true'
+  const manualOps = normalizeTimerTimelineManualOps(
+    manualOpsRecord ? manualOpsRecord.value : null
   );
 
   const hasHistory = historyValue && typeof historyValue === 'object';
@@ -449,9 +448,7 @@ export async function pushLocalTimerTimeline(afterIso = lastSyncAt, upToIso = nu
   const pushAt = new Date().toISOString();
   const payload = [];
   if (shouldPushHistory) {
-    const nextHistoryValue = shouldReplaceRemoteHistory
-      ? (historyValue || {})
-      : await buildMergedTimerTimelineHistory(historyValue || {});
+    const nextHistoryValue = await buildMergedTimerTimelineHistory(historyValue || {}, manualOps);
     payload.push({
       key: TIMER_TIMELINE_META_KEY,
       value: nextHistoryValue,
@@ -476,8 +473,8 @@ export async function pushLocalTimerTimeline(afterIso = lastSyncAt, upToIso = nu
 
   if (shouldPushHistory) {
     await setMeta(TIMER_TIMELINE_UPDATED_AT_META_KEY, pushAt);
-    if (shouldReplaceRemoteHistory) {
-      await setMeta(TIMER_TIMELINE_HISTORY_DELETE_SYNC_KEY, 'false');
+    if (manualOps.editedIds.length || manualOps.deletedIds.length) {
+      await setMeta(TIMER_TIMELINE_MANUAL_OPS_KEY, { editedIds: [], deletedIds: [] });
     }
   }
   if (shouldPushActive) {
@@ -485,39 +482,73 @@ export async function pushLocalTimerTimeline(afterIso = lastSyncAt, upToIso = nu
   }
 }
 
-async function buildMergedTimerTimelineHistory(localHistory) {
+function normalizeTimerTimelineManualOps(value) {
+  const next = value && typeof value === 'object' ? value : {};
+  return {
+    editedIds: Array.isArray(next.editedIds) ? next.editedIds.filter(Boolean) : [],
+    deletedIds: Array.isArray(next.deletedIds) ? next.deletedIds.filter(Boolean) : []
+  };
+}
+
+async function buildMergedTimerTimelineHistory(localHistory, manualOps) {
   const remoteHistory = await getRemoteTimerTimelineHistory();
   if (!remoteHistory) return localHistory;
 
-  const mergedEntries = new Map();
-  const mergeDateSegments = segments => {
-    const byId = new Map();
+  const editedIdSet = new Set(manualOps && manualOps.editedIds ? manualOps.editedIds : []);
+  const deletedIdSet = new Set(manualOps && manualOps.deletedIds ? manualOps.deletedIds : []);
+  const remoteById = new Map();
+  const localById = new Map();
+
+  for (const segments of Object.values(remoteHistory)) {
     for (const segment of Array.isArray(segments) ? segments : []) {
       if (!segment || !segment.id) continue;
-      byId.set(segment.id, segment);
+      remoteById.set(segment.id, segment);
     }
-    return Array.from(byId.values()).sort(compareTimerTimelineSegment);
-  };
-
-  for (const [dateStr, segments] of Object.entries(remoteHistory)) {
-    mergedEntries.set(dateStr, mergeDateSegments(segments));
   }
 
-  for (const [dateStr, segments] of Object.entries(localHistory || {})) {
-    const combined = [
-      ...(mergedEntries.get(dateStr) || []),
-      ...(Array.isArray(segments) ? segments : [])
-    ];
-    const merged = mergeDateSegments(combined);
-    if (merged.length) {
-      mergedEntries.set(dateStr, merged);
-    } else {
-      mergedEntries.delete(dateStr);
+  for (const segments of Object.values(localHistory || {})) {
+    for (const segment of Array.isArray(segments) ? segments : []) {
+      if (!segment || !segment.id) continue;
+      localById.set(segment.id, segment);
     }
+  }
+
+  const mergedById = new Map();
+
+  for (const [segmentId, remoteSegment] of remoteById.entries()) {
+    if (deletedIdSet.has(segmentId)) continue;
+    if (editedIdSet.has(segmentId) && localById.has(segmentId)) {
+      mergedById.set(segmentId, localById.get(segmentId));
+      continue;
+    }
+    mergedById.set(segmentId, remoteSegment);
+  }
+
+  for (const [segmentId, localSegment] of localById.entries()) {
+    if (deletedIdSet.has(segmentId)) continue;
+    if (!remoteById.has(segmentId)) {
+      mergedById.set(segmentId, localSegment);
+      continue;
+    }
+    if (editedIdSet.has(segmentId)) {
+      mergedById.set(segmentId, localSegment);
+    }
+  }
+
+  const groupedByDate = new Map();
+  for (const segment of mergedById.values()) {
+    if (!segment || !segment.date) continue;
+    if (!groupedByDate.has(segment.date)) groupedByDate.set(segment.date, []);
+    groupedByDate.get(segment.date).push(segment);
   }
 
   return Object.fromEntries(
-    Array.from(mergedEntries.entries()).sort((a, b) => a[0].localeCompare(b[0]))
+    Array.from(groupedByDate.entries())
+      .sort((a, b) => a[0].localeCompare(b[0]))
+      .map(([dateStr, segments]) => [
+        dateStr,
+        segments.sort(compareTimerTimelineSegment)
+      ])
   );
 }
 

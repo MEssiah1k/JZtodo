@@ -35,6 +35,10 @@ function clearRecoveryTimer() {
   recoveryTimer = null;
 }
 
+function clearWaitingForCanPlay() {
+  waitingForCanPlay = false;
+}
+
 function scheduleRecovery() {
   if (!audio || !shouldBePlaying || recoveryTimer) return;
   recoveryTimer = setTimeout(() => {
@@ -52,11 +56,15 @@ function ensureAudio() {
     audio.preload = 'auto';
     audio.volume = volume;
     audio.addEventListener('play', () => {
+      clearWaitingForCanPlay();
       setPlaybackState('playing');
     });
     audio.addEventListener('playing', () => {
+      clearWaitingForCanPlay();
       setPlaybackState('playing');
     });
+    audio.addEventListener('canplay', clearWaitingForCanPlay);
+    audio.addEventListener('loadeddata', clearWaitingForCanPlay);
     audio.addEventListener('ended', () => {
       if (!shouldBePlaying) return;
       setPlaybackState('loading');
@@ -79,13 +87,16 @@ function ensureAudio() {
       setPlaybackState('loading');
     });
     audio.addEventListener('error', () => {
+      clearWaitingForCanPlay();
       setPlaybackState('loading');
       scheduleRecovery();
     });
     audio.addEventListener('emptied', () => {
+      clearWaitingForCanPlay();
       setPlaybackState('loading');
       scheduleRecovery();
     });
+    audio.addEventListener('abort', clearWaitingForCanPlay);
   }
 }
 
@@ -111,11 +122,13 @@ function safePlay() {
 function schedulePlayWhenReady() {
   if (!audio || waitingForCanPlay) return;
   waitingForCanPlay = true;
-  audio.addEventListener('canplay', () => {
+  const playWhenReady = () => {
     waitingForCanPlay = false;
     if (!audio || !shouldBePlaying) return;
     safePlay();
-  }, { once: true });
+  };
+  audio.addEventListener('canplay', playWhenReady, { once: true });
+  audio.addEventListener('loadeddata', playWhenReady, { once: true });
 }
 
 function unlockPlayback() {
@@ -194,10 +207,12 @@ export function play() {
   );
   if (needsReload) {
     // Rebuild media state after stop/end/background suspension.
+    waitingForCanPlay = false;
     audio.load();
     reloadBeforeNextPlay = false;
     if (audio.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) {
       schedulePlayWhenReady();
+      scheduleRecovery();
       return;
     }
   }

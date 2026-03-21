@@ -100,7 +100,7 @@ const TIMER_TIMELINE_META_KEY = 'timerTimelineByDate';
 const TIMER_TIMELINE_ACTIVE_META_KEY = 'timerTimelineActive';
 const TIMER_TIMELINE_UPDATED_AT_META_KEY = 'timerTimelineUpdatedAt';
 const TIMER_TIMELINE_ACTIVE_UPDATED_AT_META_KEY = 'timerTimelineActiveUpdatedAt';
-const TIMER_TIMELINE_HISTORY_DELETE_SYNC_KEY = 'timerTimelineHistoryDeleteSync';
+const TIMER_TIMELINE_MANUAL_OPS_KEY = 'timerTimelineManualOps';
 const TIMER_STATE_LOCAL_KEY = 'pwaTodo.timerState';
 const TIMER_TIMELINE_LOCAL_KEY = 'pwaTodo.timerTimelineByDate';
 const TIMER_TIMELINE_ACTIVE_LOCAL_KEY = 'pwaTodo.timerTimelineActive';
@@ -1975,6 +1975,37 @@ async function persistTimerTimelineHistory() {
   ]);
 }
 
+async function getTimerTimelineManualOps() {
+  const record = await getMeta(TIMER_TIMELINE_MANUAL_OPS_KEY);
+  const value = record && record.value && typeof record.value === 'object'
+    ? record.value
+    : {};
+  return {
+    editedIds: Array.isArray(value.editedIds) ? value.editedIds.filter(Boolean) : [],
+    deletedIds: Array.isArray(value.deletedIds) ? value.deletedIds.filter(Boolean) : []
+  };
+}
+
+async function markTimerTimelineManualEdit(segmentId) {
+  if (!segmentId) return;
+  const ops = await getTimerTimelineManualOps();
+  const deletedIds = ops.deletedIds.filter(id => id !== segmentId);
+  const editedIds = ops.editedIds.includes(segmentId)
+    ? ops.editedIds
+    : [...ops.editedIds, segmentId];
+  await setMeta(TIMER_TIMELINE_MANUAL_OPS_KEY, { editedIds, deletedIds });
+}
+
+async function markTimerTimelineManualDelete(segmentId) {
+  if (!segmentId) return;
+  const ops = await getTimerTimelineManualOps();
+  const editedIds = ops.editedIds.filter(id => id !== segmentId);
+  const deletedIds = ops.deletedIds.includes(segmentId)
+    ? ops.deletedIds
+    : [...ops.deletedIds, segmentId];
+  await setMeta(TIMER_TIMELINE_MANUAL_OPS_KEY, { editedIds, deletedIds });
+}
+
 async function persistActiveTimerSegment() {
   const updatedAt = new Date().toISOString();
   writeLocalJson(TIMER_TIMELINE_ACTIVE_LOCAL_KEY, activeTimerSegment);
@@ -2127,7 +2158,7 @@ function deleteTimerTimelineSegment(segmentId) {
   timerTimelineByDate = nextTimelineByDate;
   void (async () => {
     await persistTimerTimelineHistory();
-    await setMeta(TIMER_TIMELINE_HISTORY_DELETE_SYNC_KEY, 'true');
+    await markTimerTimelineManualDelete(segmentId);
     triggerChangeSync();
     renderTimerTimeline();
   })();
@@ -2280,6 +2311,7 @@ async function saveTimelineEditModal() {
 
   if (!changed) return;
   await persistTimerTimelineHistory();
+  await markTimerTimelineManualEdit(timelineEditingSegmentId);
   triggerChangeSync();
   renderTimerTimeline();
   closeTimelineEditModal();

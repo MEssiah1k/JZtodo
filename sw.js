@@ -1,4 +1,4 @@
-const CACHE_NAME = 'todo-cache-v48';
+const CACHE_NAME = 'todo-cache-v49';
 const CACHE_PREFIX = 'todo-cache-';
 const CORE_ASSETS = [
   './',
@@ -56,6 +56,10 @@ self.addEventListener('fetch', event => {
   if (event.request.method !== 'GET') return;
   const requestUrl = new URL(event.request.url);
   if (requestUrl.origin !== self.location.origin) return;
+  if (event.request.headers.has('range')) {
+    event.respondWith(fetch(event.request));
+    return;
+  }
 
   if (event.request.mode === 'navigate') {
     event.respondWith(
@@ -63,8 +67,8 @@ self.addEventListener('fetch', event => {
         const cache = await caches.open(CACHE_NAME);
         try {
           const networkResponse = await fetch(event.request, { cache: 'no-store' });
-          if (networkResponse && networkResponse.ok) {
-            cache.put(event.request, networkResponse.clone());
+          if (networkResponse && networkResponse.ok && networkResponse.status === 200) {
+            await cache.put(event.request, networkResponse.clone());
           }
           return networkResponse;
         } catch (err) {
@@ -82,9 +86,9 @@ self.addEventListener('fetch', event => {
       const cache = await caches.open(CACHE_NAME);
       const cached = await cache.match(event.request);
       const networkPromise = fetch(event.request)
-        .then(response => {
-          if (response && response.ok) {
-            cache.put(event.request, response.clone());
+        .then(async response => {
+          if (response && response.ok && response.status === 200) {
+            await cache.put(event.request, response.clone());
           }
           return response;
         })
