@@ -3365,6 +3365,12 @@ function setTimerMode(nextMode) {
   timerMode = nextMode === 'rest' ? 'rest' : 'work';
 }
 
+function getCurrentTimerPauseCount() {
+  if (!activeTimerSegment) return 0;
+  const slices = Array.isArray(activeTimerSegment.slices) ? activeTimerSegment.slices : [];
+  return Math.max(0, slices.length - 1);
+}
+
 function prepareWorkTimer(minutes = DEFAULT_MINUTES) {
   timerDurationMs = minutes * 60 * 1000;
   timerRemainingMs = timerDurationMs;
@@ -3403,7 +3409,8 @@ function startRestTimer() {
 }
 
 function promptStartRest() {
-  showTimerInlinePrompt('工作已结束，是否开始 20 分钟休息？', {
+  const pauseCount = getCurrentTimerPauseCount();
+  showTimerInlinePrompt(`工作已结束，本次倒计时暂停了 ${pauseCount} 次，是否开始 20 分钟休息？`, {
     confirmText: '开始休息',
     cancelText: '取消',
     onConfirm: () => {
