@@ -161,7 +161,7 @@ let migrationDone = false;
 let recurrenceRules = [];
 let editingRecurrenceRuleId = null;
 const MAX_IN_PROGRESS_TODOS = 2;
-const IN_PROGRESS_META_KEY = 'todoInProgress';
+const IN_PROGRESS_LOCAL_KEY = 'pwaTodo.todoInProgress';
 let inProgressTodos = new Map();
 let restoreInProgressPromise = null;
 const runningTimeEls = new Map();
@@ -575,8 +575,14 @@ function closeDailySettlementModal() {
 }
 
 async function settlePreviousDayIfNeeded(options = {}) {
-  if (!syncReady) return;
   const today = formatDateLocal(new Date());
+  const inProgressRecord = readLocalJson(IN_PROGRESS_LOCAL_KEY);
+  if (inProgressRecord && inProgressRecord.date && inProgressRecord.date !== today) {
+    const cleared = await clearInProgressTodosForNewDay();
+    if (cleared) renderTodos();
+  }
+
+  if (!syncReady) return;
   const localDayRecord = await getMeta(NATURAL_DAY_META_KEY);
   const lastKnownDay = localDayRecord && typeof localDayRecord.value === 'string'
     ? localDayRecord.value
@@ -696,7 +702,8 @@ function updateContributionCellSize(wrapper) {
   const gridGap = parseFloat(styles.gap) || 6;
   const chartWidth = wrapper.clientWidth;
   const cellsWidth = Math.max(0, chartWidth - labelWidth - gridGap);
-  const size = Math.max(10, Math.floor((cellsWidth - gap * (weekCount - 1)) / weekCount));
+  const minSize = window.innerWidth <= 520 ? 8 : 10;
+  const size = Math.max(minSize, Math.floor((cellsWidth - gap * (weekCount - 1)) / weekCount));
   wrapper.style.setProperty('--contrib-cell-size', `${size}px`);
 }
 
@@ -1036,12 +1043,18 @@ async function persistInProgressTodos() {
   const payload = Array.from(inProgressTodos.entries())
     .slice(0, MAX_IN_PROGRESS_TODOS)
     .map(([uuid, startAt]) => ({ uuid, startAt }));
-  await setMeta(IN_PROGRESS_META_KEY, payload);
+  writeLocalJson(IN_PROGRESS_LOCAL_KEY, {
+    date: getTodayDateStr(),
+    items: payload
+  });
 }
 
 async function restoreInProgressTodos() {
-  const record = await getMeta(IN_PROGRESS_META_KEY);
-  const value = record && Array.isArray(record.value) ? record.value : [];
+  const localValue = readLocalJson(IN_PROGRESS_LOCAL_KEY);
+  const today = getTodayDateStr();
+  const value = localValue && localValue.date === today && Array.isArray(localValue.items)
+    ? localValue.items
+    : [];
   const next = new Map();
   const now = Date.now();
   for (const item of value) {
@@ -1051,10 +1064,20 @@ async function restoreInProgressTodos() {
     next.set(item.uuid, Number.isFinite(startAt) && startAt > 0 ? startAt : now);
   }
   inProgressTodos = next;
+  if (!localValue || localValue.date === today) return;
+  writeLocalJson(IN_PROGRESS_LOCAL_KEY, null);
+}
+
+async function clearInProgressTodosForNewDay() {
+  if (!inProgressTodos.size && !readLocalJson(IN_PROGRESS_LOCAL_KEY)) return false;
+  inProgressTodos = new Map();
+  writeLocalJson(IN_PROGRESS_LOCAL_KEY, null);
+  return true;
 }
 
 async function pruneInProgressTodos() {
   if (!inProgressTodos.size) return;
+  const today = getTodayDateStr();
   const all = await getAllTodos();
   const valid = new Set(
     all
@@ -1063,7 +1086,7 @@ async function pruneInProgressTodos() {
           !todo.deletedAt &&
           !todo.completed &&
           todo.uuid &&
-          todo.date === selectedDate
+          todo.date === today
       )
       .map(todo => todo.uuid)
   );
@@ -1098,6 +1121,10 @@ async function toggleTodoInProgress(todo) {
   await pruneInProgressTodos();
   if (!todo || !todo.uuid) {
     setStatus('任务缺少标识，无法设为进行中');
+    return false;
+  }
+  if (todo.date !== getTodayDateStr()) {
+    setStatus('只能将今天的任务设为进行中');
     return false;
   }
   if (todo.completed || todo.deletedAt) {
@@ -2210,7 +2237,13 @@ if (recurrenceOpenBtn) {
     if (!recurrenceModal) return;
     recurrenceModal.classList.remove('hidden');
     resetRecurrenceForm();
-    loadRecurrenceRules();
+    if (recurrenceList) recurrenceList.scrollTop = 0;
+    void loadRecurrenceRules().then(() => {
+      if (!recurrenceList) return;
+      requestAnimationFrame(() => {
+        recurrenceList.scrollTop = 0;
+      });
+    });
   });
 }
 
@@ -3661,48 +3694,36 @@ async function restoreTimerState() {
   ) return;
   timerDurationMs = value.durationMs;
   timerRemainingMs = value.remainingMs;
+  timerRunning = false;
+  timerStartAt = Date.now();
   setTimerMode(value.mode);
   if (timerMinutesInput) timerMinutesInput.value = Math.floor(timerDurationMs / 60000);
 
-  if (value.running && value.startAt) {
-    const elapsed = Date.now() - value.startAt;
-    timerRemainingMs = Math.max(0, timerRemainingMs - elapsed);
-    if (timerRemainingMs <= 0) {
-      timerRunning = false;
-      prepareWorkTimer(DEFAULT_MINUTES);
-      setTimerStatus(value.mode === 'rest' ? '休息结束' : '倒计时结束');
-    } else {
-      timerRunning = true;
-      timerStartAt = Date.now();
-      if (timerMode === 'work') {
-        resetBellSchedule(Date.now());
-      } else {
-        bellPhase = {
-          state: 'rest',
-          restEndsAt: 0,
-          nextBellAt: 0
-        };
-      }
-      if (timerMode === 'work' && !activeTimerSegment) {
-        startTimerTimelineSegment(Date.now() - elapsed);
-      }
+  if (timerMode === 'work') {
+    resetBellSchedule(Date.now());
+    if (activeTimerSegment && activeTimerSegment.state === 'running') {
+      pauseTimerTimelineSegment(Date.now());
     }
   } else {
-    timerRunning = false;
+    bellPhase = {
+      state: 'rest',
+      restEndsAt: 0,
+      nextBellAt: 0
+    };
+  }
+
+  if (value.running && value.startAt) {
+    setTimerStatus(value.mode === 'rest' ? '休息已暂停，请手动恢复' : '倒计时已暂停，请手动恢复');
   }
 
   updateTimerUI(timerRemainingMs);
   updateToggleLabel();
   renderTimerTimeline();
-  if (timerRunning) {
-    updateTimerLease();
-    if (ownsTimerLease) {
-      if (timerMode === 'work') bgm.play();
-      else bgm.stop();
-    }
-  }
+  bgm.stop();
+  releaseTimerLease();
+  clearTimerTicking();
+  persistTimerState();
 }
-
 restoreTimerTimeline().then(restoreTimerState);
 
 async function restoreAlarmVolume() {
