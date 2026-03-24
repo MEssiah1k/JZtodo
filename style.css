@@ -935,6 +935,23 @@ section {
   background: var(--todo);
 }
 
+#todo-list li[draggable="true"] {
+  cursor: grab;
+}
+
+#todo-list li.todo-dragging {
+  opacity: 0.55;
+  cursor: grabbing;
+}
+
+#todo-list li.todo-drop-before {
+  border-top: 3px solid var(--todo-active-border);
+}
+
+#todo-list li.todo-drop-after {
+  border-bottom: 3px solid var(--todo-active-border);
+}
+
 #todo-list li.in-progress,
 #completed-list li.in-progress {
   background: var(--todo-active);

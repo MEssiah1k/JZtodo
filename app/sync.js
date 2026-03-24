@@ -307,6 +307,8 @@ export async function pullNow() {
   try {
     setStatus('Syncing', 'pull only');
     const updatedDates = await pullRemoteChanges();
+    const dedupedAfterPull = await dedupeLocalTodosByNameAndStatus();
+    dedupedAfterPull.forEach(date => updatedDates.add(date));
     lastSyncAt = new Date().toISOString();
     await setMeta('lastSyncAt', lastSyncAt);
     setStatus('Idle', `last ${lastSyncAt}`);
@@ -920,6 +922,9 @@ function mergeTodoForPull(local, remote) {
   if (merged.carriedFrom == null && local.carriedFrom != null) {
     merged.carriedFrom = local.carriedFrom;
   }
+  if (merged.sortOrder == null && local.sortOrder != null) {
+    merged.sortOrder = local.sortOrder;
+  }
   if (!merged.userId && local.userId) {
     merged.userId = local.userId;
   }
@@ -943,6 +948,7 @@ function shouldUpdateTodo(local, next) {
     (local.recurrenceRuleId ?? null) !== (next.recurrenceRuleId ?? null) ||
     (local.dueMinutes ?? null) !== (next.dueMinutes ?? null) ||
     (local.carriedFrom ?? null) !== (next.carriedFrom ?? null) ||
+    (local.sortOrder ?? null) !== (next.sortOrder ?? null) ||
     (local.userId ?? null) !== (next.userId ?? null) ||
     (local.createdAt || '') !== (next.createdAt || '') ||
     (local.updatedAt || '') !== (next.updatedAt || '') ||

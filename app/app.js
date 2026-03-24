@@ -161,6 +161,8 @@ const DAILY_FATIGUE_UPDATED_AT_META_KEY = 'dailyFatigueAnswersUpdatedAt';
 const DAILY_FATIGUE_REMOTE_KEY = 'daily_fatigue_answers';
 
 let todos = [];
+let draggedTodoId = null;
+let suppressTodoClickUntil = 0;
 let summaries = [];
 let selectedDate = formatDateLocal(new Date());
 let migrationDone = false;
@@ -954,6 +956,7 @@ async function loadTodos() {
   await migrateMissingTodoDates();
   await pruneInProgressTodos();
   todos = await getTodosByDate(selectedDate);
+  todos = await ensurePendingTodoSortOrders(todos);
   renderTodos();
 }
 
@@ -1024,6 +1027,7 @@ async function moveTodoToTomorrow(todo) {
     ...todo,
     date: tomorrowDate,
     completed: false,
+    sortOrder: null,
     recurrenceRuleId: null,
     updatedAt: now
   });
@@ -1045,11 +1049,7 @@ function renderTodos() {
     .filter(todo => !todo.deletedAt);
   const pendingTodos = visibleTodos
     .filter(todo => !todo.completed)
-    .sort((a, b) => {
-      const aTime = Date.parse(a.updatedAt || a.createdAt || 0);
-      const bTime = Date.parse(b.updatedAt || b.createdAt || 0);
-      return bTime - aTime;
-    });
+    .sort(comparePendingTodos);
   const doneTodos = visibleTodos
     .filter(todo => todo.completed)
     .sort((a, b) => {
@@ -1063,6 +1063,45 @@ function renderTodos() {
     li.className = todo.completed ? 'completed' : '';
     if (isTodoInProgress(todo)) li.classList.add('in-progress');
     li.dataset.id = String(todo.id);
+    li.draggable = targetList === list;
+
+    if (targetList === list) {
+      li.ondragstart = event => {
+        if (li.classList.contains('editing')) {
+          event.preventDefault();
+          return;
+        }
+        draggedTodoId = todo.id;
+        li.classList.add('todo-dragging');
+        if (event.dataTransfer) {
+          event.dataTransfer.effectAllowed = 'move';
+          event.dataTransfer.setData('text/plain', String(todo.id));
+        }
+      };
+      li.ondragend = () => {
+        draggedTodoId = null;
+        li.classList.remove('todo-dragging');
+        clearTodoDropIndicatorClasses();
+      };
+      li.ondragover = event => {
+        if (draggedTodoId == null || draggedTodoId === todo.id) return;
+        event.preventDefault();
+        const insertAfter = shouldInsertAfter(event, li);
+        li.classList.toggle('todo-drop-before', !insertAfter);
+        li.classList.toggle('todo-drop-after', insertAfter);
+      };
+      li.ondragleave = () => {
+        li.classList.remove('todo-drop-before', 'todo-drop-after');
+      };
+      li.ondrop = async event => {
+        if (draggedTodoId == null || draggedTodoId === todo.id) return;
+        event.preventDefault();
+        const insertAfter = shouldInsertAfter(event, li);
+        suppressTodoClickUntil = Date.now() + 300;
+        clearTodoDropIndicatorClasses();
+        await reorderPendingTodos(draggedTodoId, todo.id, insertAfter);
+      };
+    }
 
     const content = document.createElement('div');
     content.className = 'todo-content';
@@ -1141,6 +1180,7 @@ function renderTodos() {
     li.appendChild(content);
     li.appendChild(actions);
     li.onclick = async event => {
+      if (Date.now() < suppressTodoClickUntil) return;
       if (event.detail > 1) return;
       if (li.classList.contains('editing')) return;
       const nextCompleted = !todo.completed;
@@ -1177,6 +1217,94 @@ function renderTodos() {
 
 function isTodoInProgress(todo) {
   return Boolean(todo && todo.uuid && inProgressTodos.has(todo.uuid));
+}
+
+function getTodoSortTime(todo) {
+  return Date.parse(todo.updatedAt || todo.createdAt || 0);
+}
+
+function comparePendingTodos(a, b) {
+  const aOrder = Number.isFinite(a.sortOrder) ? a.sortOrder : null;
+  const bOrder = Number.isFinite(b.sortOrder) ? b.sortOrder : null;
+  if (aOrder != null && bOrder != null && aOrder !== bOrder) {
+    return aOrder - bOrder;
+  }
+  if (aOrder != null) return -1;
+  if (bOrder != null) return 1;
+  return getTodoSortTime(b) - getTodoSortTime(a);
+}
+
+async function ensurePendingTodoSortOrders(items) {
+  const pendingTodos = items.filter(todo => todo && !todo.deletedAt && !todo.completed);
+  if (!pendingTodos.some(todo => !Number.isFinite(todo.sortOrder))) {
+    return items;
+  }
+
+  const orderedTodos = [...pendingTodos].sort(comparePendingTodos);
+  const updatedById = new Map();
+
+  await Promise.all(
+    orderedTodos.map(async (todo, index) => {
+      if (todo.sortOrder === index) {
+        updatedById.set(todo.id, todo);
+        return;
+      }
+      const nextTodo = {
+        ...todo,
+        sortOrder: index
+      };
+      await updateTodo(nextTodo);
+      updatedById.set(todo.id, nextTodo);
+    })
+  );
+
+  return items.map(todo => updatedById.get(todo.id) || todo);
+}
+
+function shouldInsertAfter(event, element) {
+  const rect = element.getBoundingClientRect();
+  return event.clientY >= rect.top + rect.height / 2;
+}
+
+function clearTodoDropIndicatorClasses() {
+  if (!list) return;
+  list
+    .querySelectorAll('.todo-drop-before, .todo-drop-after, .todo-dragging')
+    .forEach(item => item.classList.remove('todo-drop-before', 'todo-drop-after', 'todo-dragging'));
+}
+
+async function reorderPendingTodos(draggedId, targetId, insertAfter) {
+  const orderedPendingTodos = todos
+    .filter(todo => todo && !todo.deletedAt && !todo.completed)
+    .sort(comparePendingTodos);
+  const draggedIndex = orderedPendingTodos.findIndex(todo => todo.id === draggedId);
+  const targetIndex = orderedPendingTodos.findIndex(todo => todo.id === targetId);
+  if (draggedIndex < 0 || targetIndex < 0) return;
+
+  const reorderedTodos = [...orderedPendingTodos];
+  const [draggedTodo] = reorderedTodos.splice(draggedIndex, 1);
+  const adjustedTargetIndex = reorderedTodos.findIndex(todo => todo.id === targetId);
+  const insertIndex = insertAfter ? adjustedTargetIndex + 1 : adjustedTargetIndex;
+  reorderedTodos.splice(insertIndex, 0, draggedTodo);
+
+  const updatedById = new Map();
+  await Promise.all(
+    reorderedTodos.map(async (todo, index) => {
+      if (todo.sortOrder === index) {
+        updatedById.set(todo.id, todo);
+        return;
+      }
+      const nextTodo = {
+        ...todo,
+        sortOrder: index
+      };
+      await updateTodo(nextTodo);
+      updatedById.set(todo.id, nextTodo);
+    })
+  );
+
+  todos = todos.map(todo => updatedById.get(todo.id) || todo);
+  renderTodos();
 }
 
 function formatElapsed(ms) {
@@ -1366,6 +1494,14 @@ function setStatus(message) {
   }
 }
 
+function getNextPendingSortOrder() {
+  const pendingOrders = todos
+    .filter(todo => todo && !todo.deletedAt && !todo.completed && Number.isFinite(todo.sortOrder))
+    .map(todo => todo.sortOrder);
+  if (!pendingOrders.length) return 0;
+  return Math.min(...pendingOrders) - 1;
+}
+
 function formatTodoText(category, text) {
   const safeCategory = typeof category === 'string' && category.trim()
     ? category.trim()
@@ -1411,6 +1547,7 @@ addBtn.onclick = async () => {
     date: selectedDate,
     text: formatTodoText(todoCategory ? todoCategory.value : 'Work', text),
     completed: false,
+    sortOrder: getNextPendingSortOrder(),
     createdAt: now,
     updatedAt: now,
     deletedAt: null,
