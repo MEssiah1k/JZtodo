@@ -36,8 +36,8 @@ const TIMER_TIMELINE_ACTIVE_META_KEY = 'timerTimelineActive';
 const TIMER_TIMELINE_UPDATED_AT_META_KEY = 'timerTimelineUpdatedAt';
 const TIMER_TIMELINE_ACTIVE_UPDATED_AT_META_KEY = 'timerTimelineActiveUpdatedAt';
 const TIMER_TIMELINE_MANUAL_OPS_KEY = 'timerTimelineManualOps';
-const TIMER_TIMELINE_LOCAL_KEY = 'pwaTodo.timerTimelineByDate';
-const TIMER_TIMELINE_ACTIVE_LOCAL_KEY = 'pwaTodo.timerTimelineActive';
+const TIMER_TIMELINE_LOCAL_KEY = 'jztodo.timer.timelineByDate';
+const TIMER_TIMELINE_ACTIVE_LOCAL_KEY = 'jztodo.timer.timelineActive';
 const MAX_AUTO_DEDUPE_DELETE_COUNT = 50;
 const MAX_AUTO_DEDUPE_DELETE_RATIO = 0.3;
 

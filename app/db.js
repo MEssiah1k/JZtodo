@@ -1,4 +1,4 @@
-const DB_NAME = 'todo-db';
+const DB_NAME = 'jztodo-timer-db';
 const STORE_NAME = 'todos';
 const DB_VERSION = 7;
 const SUMMARY_STORE = 'summaries';

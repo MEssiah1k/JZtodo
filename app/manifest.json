@@ -1,6 +1,6 @@
 {
-  "name": "PWA Todo",
-  "short_name": "Todo",
+  "name": "JZtodo Timer",
+  "short_name": "JZtodo",
   "start_url": "../index.html",
   "scope": "../",
   "display": "standalone",

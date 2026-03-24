@@ -1,5 +1,5 @@
-const CACHE_NAME = 'todo-cache-v50';
-const CACHE_PREFIX = 'todo-cache-';
+const CACHE_NAME = 'jztodo-timer-cache-v51';
+const CACHE_PREFIX = 'jztodo-timer-cache-';
 const CORE_ASSETS = [
   './',
   './index.html',
