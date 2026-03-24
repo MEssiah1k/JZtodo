@@ -325,22 +325,46 @@ export async function clearAllRemoteData() {
   }
   if (!supabase) return false;
 
-  const ALL_TIME = '1970-01-01T00:00:00.000Z';
+  const clearTableByPrimaryKey = async (table, keyColumn) => {
+    const CHUNK_SIZE = 200;
 
-  const clearTableByUpdatedAt = async table => {
-    const { error } = await supabase
-      .from(table)
-      .delete()
-      .gte('updated_at', ALL_TIME);
-    if (error && !isMissingTable(error, table)) {
-      throw error;
+    while (true) {
+      const { data, error } = await supabase
+        .from(table)
+        .select(keyColumn)
+        .limit(CHUNK_SIZE);
+      if (error) {
+        if (isMissingTable(error, table)) return;
+        throw error;
+      }
+
+      const ids = Array.isArray(data)
+        ? data.map(row => row && row[keyColumn]).filter(Boolean)
+        : [];
+      if (!ids.length) break;
+
+      const { error: deleteError } = await supabase
+        .from(table)
+        .delete()
+        .in(keyColumn, ids);
+      if (deleteError) {
+        if (isMissingTable(deleteError, table)) return;
+        throw deleteError;
+      }
     }
   };
 
-  await clearTableByUpdatedAt('todos');
-  await clearTableByUpdatedAt('summaries');
-  await clearTableByUpdatedAt('recurrence_rules');
-  await clearTableByUpdatedAt('timer_timeline');
+  await clearTableByPrimaryKey('todos', 'uuid');
+  await clearTableByPrimaryKey('summaries', 'uuid');
+  await clearTableByPrimaryKey('recurrence_rules', 'uuid');
+  await clearTableByPrimaryKey('timer_timeline', 'key');
+
+  // 清空云端后推进本地同步游标，避免自动同步把旧本地数据立刻重新推回云端。
+  const clearedAt = new Date().toISOString();
+  lastSyncAt = clearedAt;
+  await setMeta('lastSyncAt', clearedAt);
+  await setMeta(TIMER_TIMELINE_UPDATED_AT_META_KEY, clearedAt);
+  await setMeta(TIMER_TIMELINE_ACTIVE_UPDATED_AT_META_KEY, clearedAt);
   return true;
 }
 
