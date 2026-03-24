@@ -1,4 +1,4 @@
-const CACHE_NAME = 'jztodo-timer-cache-v51';
+const CACHE_NAME = 'jztodo-timer-cache-v52';
 const CACHE_PREFIX = 'jztodo-timer-cache-';
 const CORE_ASSETS = [
   './',
@@ -9,9 +9,7 @@ const CORE_ASSETS = [
   './app/sync.js?v=20260321-daily-settlement',
   './app/manifest.json?v=20260321-daily-settlement',
   './app/bgm.js?v=20260321-daily-settlement',
-  './assets/bgm/pinknoise.m4a',
-  './app/icon.svg?v=2',
-  './sw.js?v=20260321-daily-settlement'
+  './app/icon.svg?v=2'
 ];
 
 self.addEventListener('install', event => {
@@ -20,9 +18,18 @@ self.addEventListener('install', event => {
       const cache = await caches.open(CACHE_NAME);
       // Force network revalidation during install so a new worker does not
       // seed its cache from stale HTTP cache entries.
-      await Promise.all(
+      const cacheResults = await Promise.allSettled(
         CORE_ASSETS.map(url => cache.add(new Request(url, { cache: 'reload' })))
       );
+      const failedAssets = cacheResults
+        .map((result, index) => ({ result, url: CORE_ASSETS[index] }))
+        .filter(item => item.result.status === 'rejected');
+      if (failedAssets.length) {
+        console.warn(
+          '[sw] precache failed',
+          failedAssets.map(item => item.url)
+        );
+      }
       const clients = await self.clients.matchAll({ type: 'window' });
       if (self.registration.active && clients.length) {
         clients.forEach(client => client.postMessage({ type: 'SW_UPDATE_READY' }));
@@ -33,17 +40,18 @@ self.addEventListener('install', event => {
 
 self.addEventListener('activate', event => {
   event.waitUntil(
-    caches.keys().then(keys =>
-      Promise.all(
+    (async () => {
+      const keys = await caches.keys();
+      await Promise.all(
         keys.map(key =>
           key.startsWith(CACHE_PREFIX) && key !== CACHE_NAME
             ? caches.delete(key)
             : null
         )
-      )
-    )
+      );
+      await self.clients.claim();
+    })()
   );
-  self.clients.claim();
 });
 
 self.addEventListener('message', event => {

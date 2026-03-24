@@ -4007,20 +4007,27 @@ if ('serviceWorker' in navigator) {
     location.reload();
   };
 
-  navigator.serviceWorker.register('./sw.js?v=20260321-daily-settlement', { updateViaCache: 'none' }).then(reg => {
-    swRegistration = reg;
-    reg.update();
-    if (reg.waiting) promptForUpdate();
-    reg.addEventListener('updatefound', () => {
-      const installing = reg.installing;
-      if (!installing) return;
-      installing.addEventListener('statechange', () => {
-        if (installing.state === 'installed' && navigator.serviceWorker.controller) {
-          promptForUpdate();
-        }
+  navigator.serviceWorker
+    .register('./sw.js?v=20260321-daily-settlement', { updateViaCache: 'none' })
+    .then(reg => {
+      swRegistration = reg;
+      reg.update().catch(err => {
+        console.error('[sw] update failed', err);
       });
+      if (reg.waiting) promptForUpdate();
+      reg.addEventListener('updatefound', () => {
+        const installing = reg.installing;
+        if (!installing) return;
+        installing.addEventListener('statechange', () => {
+          if (installing.state === 'installed' && navigator.serviceWorker.controller) {
+            promptForUpdate();
+          }
+        });
+      });
+    })
+    .catch(err => {
+      console.error('[sw] register failed', err);
     });
-  });
 
   navigator.serviceWorker.addEventListener('message', event => {
     if (event.data && event.data.type === 'SW_UPDATE_READY') {
