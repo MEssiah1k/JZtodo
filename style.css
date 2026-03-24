@@ -1734,7 +1734,8 @@ section {
 
 #sync-btn,
 #sync-pull-btn,
-#sync-full-btn {
+#sync-full-btn,
+#sync-clear-btn {
   padding: 8px 12px;
   border: 1px solid var(--border);
   border-radius: 8px;

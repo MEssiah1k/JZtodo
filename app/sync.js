@@ -319,6 +319,31 @@ export async function pullNow() {
   }
 }
 
+export async function clearAllRemoteData() {
+  if (!supabase) {
+    supabase = await getSupabase();
+  }
+  if (!supabase) return false;
+
+  const ALL_TIME = '1970-01-01T00:00:00.000Z';
+
+  const clearTableByUpdatedAt = async table => {
+    const { error } = await supabase
+      .from(table)
+      .delete()
+      .gte('updated_at', ALL_TIME);
+    if (error && !isMissingTable(error, table)) {
+      throw error;
+    }
+  };
+
+  await clearTableByUpdatedAt('todos');
+  await clearTableByUpdatedAt('summaries');
+  await clearTableByUpdatedAt('recurrence_rules');
+  await clearTableByUpdatedAt('timer_timeline');
+  return true;
+}
+
 export async function syncAllLocalToCloud() {
   if (!supabase) return;
   try {

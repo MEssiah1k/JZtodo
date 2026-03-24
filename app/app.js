@@ -23,6 +23,7 @@ import {
   pushNow,
   pullNow,
   syncAllLocalToCloud,
+  clearAllRemoteData,
   getUserId,
   fetchRemoteKv,
   fetchRemoteKvsByPrefix,
@@ -78,6 +79,7 @@ const dateWeekday = document.getElementById('date-weekday');
 const syncBtn = document.getElementById('sync-btn');
 const syncPullBtn = document.getElementById('sync-pull-btn');
 const syncFullBtn = document.getElementById('sync-full-btn');
+const syncClearBtn = document.getElementById('sync-clear-btn');
 const syncStatus = document.getElementById('sync-status');
 
 const recurrenceOpenBtn = document.getElementById('recurrence-open');
@@ -3779,6 +3781,29 @@ if (syncFullBtn) {
       syncAllLocalToCloud();
       void syncDailyFatigueAnswersFromCloud();
       void settlePreviousDayIfNeeded({ force: true });
+    }
+  });
+}
+
+if (syncClearBtn) {
+  syncClearBtn.addEventListener('click', async () => {
+    const confirmed = await openPromptModal(
+      '危险操作：将清空 Supabase 云端的 todos、summaries、recurrence_rules、timer_timeline 全部数据。\n此操作不可恢复，是否继续？',
+      { confirmText: '确认清空', cancelText: '取消', showCancel: true }
+    );
+    if (!confirmed) return;
+
+    try {
+      setSyncStatus('正在清空云端数据...');
+      const cleared = await clearAllRemoteData();
+      if (!cleared) {
+        setSyncStatus('清空失败：同步未初始化');
+        return;
+      }
+      setSyncStatus('云端数据已清空');
+    } catch (err) {
+      setSyncStatus('清空失败');
+      console.error('[sync] clear cloud error', err);
     }
   });
 }
