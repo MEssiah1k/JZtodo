@@ -41,6 +41,7 @@ const status = document.getElementById('status');
 
 const summaryInput = document.getElementById('summary-input');
 const summaryStatus = document.getElementById('summary-status');
+const yesterdayFocusCountEl = document.getElementById('yesterday-focus-count');
 const summaryRating = document.getElementById('summary-rating');
 const summaryModule = document.getElementById('summary-module');
 const timerTimelineChart = document.getElementById('timer-timeline-chart');
@@ -339,66 +340,29 @@ function getTodayFocusCount(dateStr) {
     .length;
 }
 
+function renderYesterdayFocusCount(baseDateStr = selectedDate) {
+  if (!yesterdayFocusCountEl) return;
+  const targetDate = getYesterdayDateStr(baseDateStr);
+  const focusCount = targetDate ? getTodayFocusCount(targetDate) : 0;
+  yesterdayFocusCountEl.textContent = `前日（${targetDate}）专注次数：${focusCount}`;
+}
+
 function getSettlementLevel(rating) {
   const normalized = Number.isFinite(rating) ? rating : 0;
   return Math.max(0, Math.min(10, Math.round(normalized * 2)));
 }
 
 function getSettlementAction(level) {
-  if (level >= 10) {
-    return {
-      type: 'reward',
-      coins: 4,
-      text: '获得奖励：4 个后悔币'
-    };
-  }
-  if (level >= 9) {
-    return {
-      type: 'reward',
-      coins: 3,
-      text: '获得奖励：3 个后悔币'
-    };
-  }
-  if (level >= 8) {
-    return {
-      type: 'reward',
-      coins: 2,
-      text: '获得奖励：2 个后悔币'
-    };
-  }
-  if (level < 2) {
-    return {
-      type: 'penalty',
-      coins: 0,
-      text: '需要惩罚：400r投资'
-    };
-  }
-  if (level < 4) {
-    return {
-      type: 'penalty',
-      coins: 0,
-      text: '需要惩罚：200r投资'
-    };
-  }
-  if (level < 6) {
-    return {
-      type: 'penalty',
-      coins: 0,
-      text: '需要惩罚：100r投资'
-    };
-  }
   return {
     type: 'neutral',
     coins: 0,
-    text: '无奖励，无惩罚'
+    text: '仅统计专注次数，不进行奖励或惩罚'
   };
 }
 
 function getSettlementEncouragement(level, actionType) {
-  if (actionType === 'reward') return '今天做得很稳，继续把高质量专注延续下去。';
-  if (actionType === 'penalty') return '今天没有达标，按规则执行惩罚，明天把节奏拉回来。';
-  if (level >= 6) return '已经过线了，再多一点稳定输出就能拿到奖励。';
-  return '先别找借口，明天至少把基础专注次数补回来。';
+  if (level >= 6) return '保持节奏，继续稳定专注。';
+  return '今天先复盘，明天把专注次数再抬高一些。';
 }
 
 function normalizeRegretCoinLedger(value) {
@@ -539,20 +503,7 @@ function shouldShowDailyFatigueQuestion(dateStr = selectedDate, now = new Date()
 }
 
 function renderDailyFatigueQuestion() {
-  const isVisible = shouldShowDailyFatigueQuestion(selectedDate);
-  if (dailyFatigueCard) {
-    dailyFatigueCard.classList.toggle('hidden', !isVisible);
-  }
-  const answer = getDailyFatigueAnswer(selectedDate);
-  const buttonStates = [
-    [fatigueYesBtn, answer === 'yes'],
-    [fatigueNoBtn, answer === 'no']
-  ];
-  buttonStates.forEach(([button, selected]) => {
-    if (!button) return;
-    button.classList.toggle('is-selected', selected);
-    button.setAttribute('aria-pressed', selected ? 'true' : 'false');
-  });
+  // Feature removed: do not show daily fatigue question UI.
 }
 
 async function persistDailyFatigueAnswers(updatedAt = new Date().toISOString()) {
@@ -706,32 +657,7 @@ function buildDailySettlement(dateStr, rating, focusCount) {
 }
 
 function openDailySettlementModal(settlement, balance) {
-  if (!dailySettlementModal || !dailySettlementBody) {
-    window.alert([
-      `日期：${settlement.date}`,
-      `专注次数：${settlement.focusCount}`,
-      settlement.actionText,
-      `目前后悔币：${balance}`,
-      `鼓励语：${settlement.encouragement}`
-    ].join('\n'));
-    return;
-  }
-  dailySettlementBody.innerHTML = '';
-  const lines = [
-    ['日期', settlement.date],
-    ['专注次数', `${settlement.focusCount}`],
-    ['星星等级', `${settlement.level}/10`],
-    ['结算结果', settlement.actionText],
-    ['目前后悔币个数', `${balance}`],
-    ['鼓励语', settlement.encouragement]
-  ];
-  lines.forEach(([label, value], index) => {
-    const row = document.createElement(index === 3 ? 'div' : 'p');
-    if (index === 3) row.className = 'settlement-highlight';
-    row.innerHTML = `<span class="settlement-label">${label}：</span>${value}`;
-    dailySettlementBody.appendChild(row);
-  });
-  dailySettlementModal.classList.remove('hidden');
+  // Feature removed: do not show settlement popup.
 }
 
 function closeDailySettlementModal() {
@@ -746,59 +672,29 @@ async function settlePreviousDayIfNeeded(options = {}) {
     if (cleared) renderTodos();
   }
 
-  if (!syncReady) return;
   const localDayRecord = await getMeta(NATURAL_DAY_META_KEY);
   const lastKnownDay = localDayRecord && typeof localDayRecord.value === 'string'
     ? localDayRecord.value
     : '';
 
-  if (!options.force && lastKnownDay === today) return;
+  if (!options.force && lastKnownDay === today) {
+    renderYesterdayFocusCount(today);
+    return;
+  }
   await setMeta(NATURAL_DAY_META_KEY, today);
 
   const targetDate = getYesterdayDateStr(today);
   if (!targetDate) return;
-
-  const existingRemoteSettlement = await fetchRemoteKv(getDailySettlementKey(targetDate));
-  if (existingRemoteSettlement && existingRemoteSettlement.value) {
-    await syncRegretCoinLedgerFromCloud();
-    renderRegretCoinSection();
-    return;
-  }
 
   const targetSummaries = await getSummariesByDate(targetDate);
   const latestSummary = getLatestSummaryRecord(targetSummaries);
   const rating = latestSummary && typeof latestSummary.rating === 'number' ? latestSummary.rating : 0;
   const focusCount = getTodayFocusCount(targetDate);
   const settlement = buildDailySettlement(targetDate, rating, focusCount);
-  await syncRegretCoinLedgerFromCloud();
-
-  const inserted = await insertRemoteKvIfAbsent(
-    getDailySettlementKey(targetDate),
-    settlement,
-    settlement.settledAt
-  );
-
-  if (!inserted) {
-    const remoteSettlement = await fetchRemoteKv(getDailySettlementKey(targetDate));
-    await syncRegretCoinLedgerFromCloud();
-    return;
+  renderYesterdayFocusCount(today);
+  if (summaryStatus && selectedDate === today) {
+    summaryStatus.textContent = `已更新前日专注次数：${settlement.focusCount}`;
   }
-
-  let finalSettlement = settlement;
-  if (settlement.actionType === 'reward') {
-    await appendRegretCoinEntry({
-      id: `reward:${targetDate}`,
-      type: 'reward',
-      amount: settlement.regretCoinReward,
-      createdAt: settlement.settledAt,
-      sourceDate: targetDate,
-      note: '每日结算奖励'
-    });
-  } else {
-    renderRegretCoinSection();
-  }
-  const balance = Math.max(0, getRegretCoinBalance());
-  openDailySettlementModal(finalSettlement, balance);
 }
 
 function getContributionHalfPeriod(date = new Date()) {
@@ -1586,6 +1482,7 @@ async function loadSummaries() {
   summaryRatingValue = latest && typeof latest.rating === 'number' ? latest.rating : 0;
   renderSummaryRating();
   renderDailyFatigueQuestion();
+  renderYesterdayFocusCount(selectedDate);
   autoResizeSummary();
   renderTimerTimeline();
   await renderContributionChart();
@@ -3764,7 +3661,6 @@ window.addEventListener('visibilitychange', () => {
     updateTimerLease();
     void settlePreviousDayIfNeeded();
     if (syncReady) {
-      void syncRegretCoinLedgerFromCloud().then(() => reconcileSettlementRewardsFromCloud());
       void syncDailyFatigueAnswersFromCloud();
     }
   }
@@ -3827,7 +3723,6 @@ const initPromise = initSync({
   onUpdate: updatedDates => {
     void restoreTimerTimeline();
     loadRecurrenceRules();
-    void syncRegretCoinLedgerFromCloud().then(() => reconcileSettlementRewardsFromCloud());
     void syncDailyFatigueAnswersFromCloud();
     if (updatedDates.has(selectedDate)) {
       loadForDate();
@@ -3839,23 +3734,19 @@ syncInitPromise = initPromise;
 initPromise.then(result => {
   syncReady = true;
   currentUserId = result && result.userId ? result.userId : null;
-  void syncRegretCoinLedgerFromCloud()
-    .then(() => reconcileSettlementRewardsFromCloud())
-    .then(() => settlePreviousDayIfNeeded());
+  void settlePreviousDayIfNeeded();
   void syncDailyFatigueAnswersFromCloud();
   if (pendingChangeSync) {
     void flushChangeSync();
   } else {
     setTimeout(() => {
       syncNow();
-      void syncRegretCoinLedgerFromCloud().then(() => reconcileSettlementRewardsFromCloud());
       void syncDailyFatigueAnswersFromCloud();
     }, 1200);
   }
   setInterval(() => {
     if (syncReady) {
       syncNow();
-      void syncRegretCoinLedgerFromCloud().then(() => reconcileSettlementRewardsFromCloud());
       void syncDailyFatigueAnswersFromCloud();
       void settlePreviousDayIfNeeded({ force: true });
     }
@@ -3866,7 +3757,6 @@ if (syncBtn) {
   syncBtn.addEventListener('click', () => {
     if (syncReady) {
       syncNow();
-      void syncRegretCoinLedgerFromCloud().then(() => reconcileSettlementRewardsFromCloud());
       void syncDailyFatigueAnswersFromCloud();
       void settlePreviousDayIfNeeded({ force: true });
     }
@@ -3877,7 +3767,6 @@ if (syncPullBtn) {
   syncPullBtn.addEventListener('click', () => {
     if (syncReady) {
       pullNow();
-      void syncRegretCoinLedgerFromCloud().then(() => reconcileSettlementRewardsFromCloud());
       void syncDailyFatigueAnswersFromCloud();
       void settlePreviousDayIfNeeded({ force: true });
     }
@@ -3888,7 +3777,6 @@ if (syncFullBtn) {
   syncFullBtn.addEventListener('click', () => {
     if (syncReady) {
       syncAllLocalToCloud();
-      void syncRegretCoinLedgerFromCloud().then(() => reconcileSettlementRewardsFromCloud());
       void syncDailyFatigueAnswersFromCloud();
       void settlePreviousDayIfNeeded({ force: true });
     }
@@ -3898,7 +3786,6 @@ if (syncFullBtn) {
 window.addEventListener('online', () => {
   if (syncReady) {
     syncNow();
-    void syncRegretCoinLedgerFromCloud().then(() => reconcileSettlementRewardsFromCloud());
     void syncDailyFatigueAnswersFromCloud();
     void settlePreviousDayIfNeeded({ force: true });
   }

@@ -914,6 +914,12 @@ section {
   min-height: 20px;
 }
 
+.summary-subtle {
+  margin: 6px 0 0;
+  color: var(--muted);
+  min-height: 20px;
+}
+
 #todo-list,
 #completed-list {
   list-style: none;

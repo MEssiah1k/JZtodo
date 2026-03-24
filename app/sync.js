@@ -21,8 +21,8 @@ import {
   updateRecurrenceRule
 } from './db.js';
 
-const SUPABASE_URL = 'https://wjyqimuecbairlbdfetr.supabase.co';
-const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndqeXFpbXVlY2JhaXJsYmRmZXRyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzA2NDU4MDcsImV4cCI6MjA4NjIyMTgwN30.il1pkrnEjHUnnvWR7PCh10VeSWrC18fv596vSCLQOpE';
+const SUPABASE_URL = 'https://ufduidzmxnbcfntvuzcw.supabase.co';
+const SUPABASE_ANON_KEY = 'sb_publishable_9XDPHML026fg0MAoNNcGYg_UNHuawPe';
 
 let supabase = null;
 let createClientFn = null;
