@@ -50,6 +50,18 @@ function getTodayDateStr() {
 }
 const DEBUG = true;
 
+function summarizeSyncError(error) {
+  const message = String(
+    (error && error.message) ||
+    (error && error.details) ||
+    (error && error.hint) ||
+    error ||
+    ''
+  ).trim();
+  if (!message) return 'unknown';
+  return message.replace(/\s+/g, ' ').slice(0, 160);
+}
+
 function generateUUID() {
   if (crypto && typeof crypto.randomUUID === 'function') {
     return crypto.randomUUID();
@@ -83,11 +95,14 @@ function mapTodoToRemote(todo) {
 }
 
 function mapSummaryToRemote(summary) {
+  const normalizedRating = Number.isFinite(Number(summary.rating))
+    ? Math.round(Number(summary.rating))
+    : 0;
   return {
     uuid: summary.uuid,
     date: summary.date,
     text: summary.text,
-    rating: summary.rating ?? 0,
+    rating: normalizedRating,
     created_at: summary.createdAt,
     updated_at: summary.updatedAt,
     deleted_at: summary.deletedAt
@@ -273,7 +288,7 @@ export async function syncNow() {
     updateHandler(updatedDates);
   } catch (err) {
     if (DEBUG) console.log('[sync] error', err);
-    setStatus('Error');
+    setStatus('Error', summarizeSyncError(err));
   }
 }
 
@@ -298,7 +313,7 @@ export async function pushNow() {
     setStatus('Idle', `last ${lastSyncAt}`);
   } catch (err) {
     if (DEBUG) console.log('[sync] push-only error', err);
-    setStatus('Error');
+    setStatus('Error', summarizeSyncError(err));
   }
 }
 
@@ -315,7 +330,7 @@ export async function pullNow() {
     updateHandler(updatedDates);
   } catch (err) {
     if (DEBUG) console.log('[sync] pull-only error', err);
-    setStatus('Error');
+    setStatus('Error', summarizeSyncError(err));
   }
 }
 
@@ -412,7 +427,7 @@ export async function syncAllLocalToCloud() {
     updateHandler(dedupedBeforePush);
   } catch (err) {
     if (DEBUG) console.log('[sync] full push error', err);
-    setStatus('Error');
+    setStatus('Error', summarizeSyncError(err));
   }
 }
 
