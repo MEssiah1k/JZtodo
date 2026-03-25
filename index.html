@@ -3,12 +3,32 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>JZtodo Timer</title>
-  <link rel="stylesheet" href="style.css?v=20260325-bgm-mobile" />
-  <link rel="manifest" href="app/manifest.json?v=20260325-bgm-mobile" />
+  <title>JZtodo Timer Light</title>
+  <style>
+    :root {
+      --bg: #ffffff;
+      --card: #eef9f2;
+      --border: #f1d5c5;
+      --text: #5b4747;
+      --muted: #9b7f7f;
+      --timer-status: #7a6262;
+      --input: #fffaf6;
+      --btn: #ffe8dc;
+      --ring: #f4a261;
+      --ring-inner: #fffaf6;
+    }
+    html, body {
+      background: #ffffff !important;
+      color: #5b4747 !important;
+    }
+    .page-card {
+      background: #eef9f2 !important;
+      border-color: #f1d5c5 !important;
+    }
+  </style>
+  <link rel="stylesheet" href="style.light.css?v=20260325-light-hardcut" />
 </head>
 <body>
-  <button id="theme-toggle" class="theme-toggle" type="button" aria-label="切换主题">☾</button>
   <button id="bgm-toggle" class="bgm-toggle" type="button" aria-label="BGM 设置">♪</button>
   <div class="page-card">
   <section id="timer-module">
@@ -234,7 +254,7 @@
     </div>
   </section>
 
-  <script type="module" src="app/app.js?v=20260325-ui-polish"></script>
+  <script type="module" src="app/app.js?v=20260325-light-only"></script>
   </div>
 
   <div id="bgm-modal" class="modal-overlay hidden" role="dialog" aria-modal="true">

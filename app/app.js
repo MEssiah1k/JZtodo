@@ -115,8 +115,6 @@ const recurrenceEditInterval = document.getElementById('recurrence-edit-interval
 const recurrenceEditUnit = document.getElementById('recurrence-edit-unit');
 const recurrenceEditSaveBtn = document.getElementById('recurrence-edit-save');
 const recurrenceEditCancelBtn = document.getElementById('recurrence-edit-cancel');
-const themeToggleBtn = document.getElementById('theme-toggle');
-
 const timerRemainingEl = document.getElementById('timer-remaining');
 const timerRingEl = document.getElementById('timer-ring');
 const timerMinutesInput = document.getElementById('timer-minutes');
@@ -150,6 +148,50 @@ const TIMER_TIMELINE_LOCAL_KEY = 'jztodo.timer.timelineByDate';
 const TIMER_TIMELINE_ACTIVE_LOCAL_KEY = 'jztodo.timer.timelineActive';
 const TIMER_LEASE_KEY = 'jztodo.timer.lease';
 const TIMER_LEASE_TTL_MS = 4000;
+
+function applyForcedLightTheme() {
+  const root = document.documentElement;
+  const forcedVars = {
+    '--bg': '#ffffff',
+    '--card': '#eef9f2',
+    '--border': '#f1d5c5',
+    '--text': '#5b4747',
+    '--muted': '#9b7f7f',
+    '--timer-status': '#7a6262',
+    '--input': '#fffaf6',
+    '--btn': '#ffe8dc',
+    '--ring': '#f4a261',
+    '--ring-inner': '#fffaf6',
+    '--todo': '#ffe3ea',
+    '--todo-active': '#fff3b0',
+    '--todo-active-border': '#ffb67f',
+    '--todo-active-glow': 'rgba(255, 182, 127, 0.28)',
+    '--todo-running': '#f08f7d',
+    '--contrib-empty': '#e5e7eb',
+    '--contrib-1': '#fff1df',
+    '--contrib-2': '#ffe4c1',
+    '--contrib-3': '#ffd5a2',
+    '--contrib-4': '#ffc785',
+    '--contrib-5': '#ffb86b',
+    '--contrib-6': '#f4a261',
+    '--contrib-7': '#ee9553',
+    '--contrib-8': '#e38b6d',
+    '--contrib-9': '#d97a43',
+    '--contrib-10': '#c9652f'
+  };
+  Object.entries(forcedVars).forEach(([key, value]) => {
+    root.style.setProperty(key, value);
+  });
+  document.body.style.background = '#ffffff';
+  document.body.style.color = '#5b4747';
+  const pageCard = document.querySelector('.page-card');
+  if (pageCard) {
+    pageCard.style.background = '#eef9f2';
+    pageCard.style.borderColor = '#f1d5c5';
+  }
+}
+
+applyForcedLightTheme();
 const TIMER_LEASE_HEARTBEAT_MS = 2000;
 const REGRET_COIN_LEDGER_META_KEY = 'regretCoinLedger';
 const REGRET_COIN_LAST_SYNC_AT_META_KEY = 'regretCoinLedgerUpdatedAt';
@@ -1631,9 +1673,99 @@ function renderTimerTimeline() {
   tooltip.setAttribute('role', 'status');
   tooltip.setAttribute('aria-live', 'polite');
 
+  const actionPopover = document.createElement('div');
+  actionPopover.className = 'timeline-actions-popover';
+  actionPopover.setAttribute('aria-hidden', 'true');
+
+  const actionEditBtn = document.createElement('button');
+  actionEditBtn.type = 'button';
+  actionEditBtn.className = 'progress-btn timeline-popover-btn';
+  actionEditBtn.textContent = '修改';
+
+  const actionDeleteBtn = document.createElement('button');
+  actionDeleteBtn.type = 'button';
+  actionDeleteBtn.className = 'delete-btn timeline-popover-btn';
+  actionDeleteBtn.textContent = '删除';
+
+  actionPopover.append(actionEditBtn, actionDeleteBtn);
+
+  let activePopoverSegment = null;
+  let hidePopoverTimer = 0;
+
   const hideTooltip = () => {
     tooltip.classList.remove('is-visible');
   };
+
+  const clearPopoverHideTimer = () => {
+    if (hidePopoverTimer) {
+      window.clearTimeout(hidePopoverTimer);
+      hidePopoverTimer = 0;
+    }
+  };
+
+  const hideActionPopover = () => {
+    clearPopoverHideTimer();
+    activePopoverSegment = null;
+    actionPopover.classList.remove('is-visible');
+    actionPopover.setAttribute('aria-hidden', 'true');
+  };
+
+  const scheduleHideActionPopover = () => {
+    clearPopoverHideTimer();
+    hidePopoverTimer = window.setTimeout(() => {
+      hideActionPopover();
+    }, 260);
+  };
+
+  const positionActionPopover = laneRect => {
+    const chartRect = timerTimelineChart.getBoundingClientRect();
+    const popoverHeight = actionPopover.offsetHeight;
+    const belowTop = laneRect.bottom - chartRect.top + 10;
+    const aboveTop = laneRect.top - chartRect.top - popoverHeight - 10;
+    const maxTop = Math.max(4, chartRect.height - popoverHeight - 4);
+    const top = belowTop <= maxTop ? belowTop : Math.max(4, aboveTop);
+    actionPopover.style.left = 'auto';
+    actionPopover.style.right = '12px';
+    actionPopover.style.top = `${top}px`;
+  };
+
+  const showActionPopover = (lane, segment) => {
+    if (!lane || !segment) return;
+    clearPopoverHideTimer();
+    activePopoverSegment = segment;
+    const laneRect = lane.getBoundingClientRect();
+    actionPopover.classList.add('is-visible');
+    actionPopover.setAttribute('aria-hidden', 'false');
+    positionActionPopover(laneRect);
+  };
+
+  actionEditBtn.addEventListener('click', event => {
+    event.stopPropagation();
+    if (!activePopoverSegment) return;
+    const targetSegment = activePopoverSegment;
+    hideTooltip();
+    hideActionPopover();
+    openTimelineEditModal(targetSegment);
+  });
+
+  actionDeleteBtn.addEventListener('click', event => {
+    event.stopPropagation();
+    if (!activePopoverSegment) return;
+    hideTooltip();
+    const { id } = activePopoverSegment;
+    hideActionPopover();
+    deleteTimerTimelineSegment(id);
+  });
+
+  actionPopover.addEventListener('pointerdown', clearPopoverHideTimer);
+  actionPopover.addEventListener('mouseenter', clearPopoverHideTimer);
+  actionPopover.addEventListener('mouseleave', scheduleHideActionPopover);
+  actionPopover.addEventListener('focusin', clearPopoverHideTimer);
+  actionPopover.addEventListener('focusout', () => {
+    if (!actionPopover.contains(document.activeElement)) {
+      scheduleHideActionPopover();
+    }
+  });
 
   const showTooltip = (button, text) => {
     const chartRect = timerTimelineChart.getBoundingClientRect();
@@ -1659,43 +1791,20 @@ function renderTimerTimeline() {
     const lane = laneEls[segment.laneIndex];
     const tooltipText = buildTimelineTooltip(segment);
     lane.replaceChildren();
-    lane.classList.remove('is-hovered');
 
     if (segment.state !== 'running') {
-      const editBtn = document.createElement('button');
-      editBtn.type = 'button';
-      editBtn.className = 'progress-btn timeline-edit-btn';
-      editBtn.textContent = '修改';
-      editBtn.addEventListener('click', event => {
-        event.stopPropagation();
-        hideTooltip();
-        openTimelineEditModal(segment);
-      });
-      lane.appendChild(editBtn);
-
-      const deleteBtn = document.createElement('button');
-      deleteBtn.type = 'button';
-      deleteBtn.className = 'delete-btn timeline-delete-btn';
-      deleteBtn.textContent = '删除';
-      deleteBtn.addEventListener('click', event => {
-        event.stopPropagation();
-        hideTooltip();
-        deleteTimerTimelineSegment(segment.id);
-      });
-      lane.appendChild(deleteBtn);
-
       lane.addEventListener('mouseenter', () => {
-        lane.classList.add('is-hovered');
+        showActionPopover(lane, segment);
       });
       lane.addEventListener('mouseleave', () => {
-        lane.classList.remove('is-hovered');
+        scheduleHideActionPopover();
       });
       lane.addEventListener('focusin', () => {
-        lane.classList.add('is-hovered');
+        showActionPopover(lane, segment);
       });
       lane.addEventListener('focusout', () => {
-        if (!lane.contains(document.activeElement)) {
-          lane.classList.remove('is-hovered');
+        if (!lane.contains(document.activeElement) && !actionPopover.contains(document.activeElement)) {
+          scheduleHideActionPopover();
         }
       });
     }
@@ -1735,29 +1844,23 @@ function renderTimerTimeline() {
     0
   );
   timerTimelineChart.replaceChildren(axis, body, tooltip);
+  timerTimelineChart.appendChild(actionPopover);
   if (timerTimelineSummary) timerTimelineSummary.textContent = '';
 }
 
 async function renderContributionChart() {
   if (!contributionChart && !taskStatusChart) return;
-  const allSummaries = await getAllSummaries();
   const allTodos = await getAllTodos();
-  const latestByDate = new Map();
+  const focusCountByDate = new Map();
   const todoStatusByDate = new Map();
 
-  allSummaries
-    .filter(summary => !summary.deletedAt)
-    .sort((a, b) => {
-      const aTime = Date.parse(a.updatedAt || a.createdAt || 0);
-      const bTime = Date.parse(b.updatedAt || b.createdAt || 0);
-      return bTime - aTime;
-    })
-    .forEach(summary => {
-      if (!summary.date || latestByDate.has(summary.date)) return;
-      const rawRating = typeof summary.rating === 'number' ? summary.rating : 0;
-      const level = Math.max(0, Math.min(10, Math.round(rawRating * 2)));
-      latestByDate.set(summary.date, level);
-    });
+  Object.keys(timerTimelineByDate || {}).forEach(dateStr => {
+    if (!dateStr) return;
+    focusCountByDate.set(dateStr, getTodayFocusCount(dateStr));
+  });
+  if (activeTimerSegment && activeTimerSegment.date) {
+    focusCountByDate.set(activeTimerSegment.date, getTodayFocusCount(activeTimerSegment.date));
+  }
 
   allTodos
     .filter(todo => !todo.deletedAt && todo.date)
@@ -1768,7 +1871,7 @@ async function renderContributionChart() {
       todoStatusByDate.set(todo.date, current);
     });
 
-  contributionScores = latestByDate;
+  contributionScores = focusCountByDate;
   taskCompletionStatusByDate = new Map(
     [...todoStatusByDate.entries()].map(([date, status]) => [
       date,
@@ -1777,7 +1880,7 @@ async function renderContributionChart() {
   );
 
   const periods = buildContributionMonthPeriods(
-    [...new Set([...latestByDate.keys(), ...todoStatusByDate.keys()])],
+    [...new Set([...focusCountByDate.keys(), ...todoStatusByDate.keys()])],
     new Date()
   );
   const currentPeriod = getContributionMonthPeriod(new Date());
@@ -1811,9 +1914,38 @@ async function renderContributionChart() {
 
     const cells = document.createElement('div');
     cells.className = 'contribution-cells';
+    const tooltip = document.createElement('div');
+    tooltip.className = 'contribution-tooltip';
+    tooltip.setAttribute('role', 'status');
+    tooltip.setAttribute('aria-live', 'polite');
     let countA = 0;
     let countB = 0;
     let countC = 0;
+
+    const hideTooltip = () => {
+      tooltip.classList.remove('is-visible');
+    };
+
+    const showTooltip = (button, label) => {
+      const chartRect = chartEl.getBoundingClientRect();
+      const buttonRect = button.getBoundingClientRect();
+      tooltip.textContent = label;
+      tooltip.classList.add('is-visible');
+      const tooltipWidth = tooltip.offsetWidth;
+      const tooltipHeight = tooltip.offsetHeight;
+      const sideOffset = 12;
+      const verticalOffset = 10;
+      const rightLeft = buttonRect.right - chartRect.left + sideOffset;
+      const leftLeft = buttonRect.left - chartRect.left - tooltipWidth - sideOffset;
+      const maxLeft = Math.max(4, chartRect.width - tooltipWidth - 4);
+      const left = rightLeft <= maxLeft ? rightLeft : Math.max(4, leftLeft);
+      const belowTop = buttonRect.bottom - chartRect.top + verticalOffset;
+      const aboveTop = buttonRect.top - chartRect.top - tooltipHeight - verticalOffset;
+      const maxTop = Math.max(4, chartRect.height - tooltipHeight - 4);
+      const top = belowTop <= maxTop ? belowTop : Math.max(4, aboveTop);
+      tooltip.style.left = `${left}px`;
+      tooltip.style.top = `${top}px`;
+    };
 
     for (let index = 0; index < rowCount * 7; index += 1) {
       const dayNumber = index - firstWeekday + 1;
@@ -1843,6 +1975,10 @@ async function renderContributionChart() {
       if (cell.level != null) button.dataset.level = String(cell.level);
       if (cell.status) button.dataset.status = cell.status;
       button.setAttribute('aria-label', cell.tooltip);
+      button.addEventListener('mouseenter', () => showTooltip(button, cell.tooltip));
+      button.addEventListener('focus', () => showTooltip(button, cell.tooltip));
+      button.addEventListener('mouseleave', hideTooltip);
+      button.addEventListener('blur', hideTooltip);
       button.addEventListener('click', () => {
         void setSelectedDate(dateStr, { keepContributionVisible: true });
       });
@@ -1877,7 +2013,7 @@ async function renderContributionChart() {
       layout.appendChild(periodNav);
     }
 
-    chartEl.replaceChildren(layout);
+    chartEl.replaceChildren(layout, tooltip);
     updateContributionCellSize(wrapper);
     return { countA, countB, countC };
   };
@@ -1886,12 +2022,13 @@ async function renderContributionChart() {
     chartEl: contributionChart,
     includePeriodNav: true,
     getCellData: dateStr => {
-      const level = contributionScores.get(dateStr) ?? 0;
+      const focusCount = contributionScores.get(dateStr) ?? 0;
+      const level = Math.max(0, Math.min(10, focusCount));
       return {
         level,
-        tooltip: `${formatTooltipDate(dateStr)}?\u4e13\u6ce8${level}\u6b21`,
-        countA: level > 0 ? 1 : 0,
-        countB: level
+        tooltip: `${formatTooltipDate(dateStr)} · 专注 ${focusCount} 次`,
+        countA: focusCount > 0 ? 1 : 0,
+        countB: focusCount
       };
     }
   });
@@ -1912,7 +2049,7 @@ async function renderContributionChart() {
             : '\u5f53\u5929\u5c1a\u672a\u7ed3\u675f';
       return {
         status,
-        tooltip: `${formatTooltipDate(dateStr)}?${tooltipText}`,
+        tooltip: `${formatTooltipDate(dateStr)} · ${tooltipText}`,
         countA: status === 'complete' ? 1 : 0,
         countB: status === 'incomplete' ? 1 : 0,
         countC: status === 'empty' ? 1 : 0
@@ -2531,7 +2668,6 @@ function buildRecurrenceDateOptions() {
 buildRecurrenceDateOptions();
 
 let summarySaveTimer = null;
-let themeDark = false;
 let summaryRatingValue = 0;
 let bgmName = 'pinknoise';
 let syncReady = false;
@@ -2580,34 +2716,6 @@ async function flushChangeSync() {
   await changeSyncInFlight;
 }
 
-function applyTheme() {
-  document.body.classList.toggle('dark', themeDark);
-  if (themeToggleBtn) {
-    themeToggleBtn.textContent = themeDark ? '☀' : '☾';
-  }
-}
-
-if (themeToggleBtn) {
-  themeToggleBtn.addEventListener('click', () => {
-    themeDark = !themeDark;
-    applyTheme();
-    setMeta('theme', themeDark ? 'dark' : 'light');
-  });
-}
-
-async function restoreTheme() {
-  const record = await getMeta('theme');
-  if (record && record.value === 'light') {
-    themeDark = false;
-  } else {
-    themeDark = false;
-    await setMeta('theme', 'light');
-  }
-  applyTheme();
-}
-
-restoreTheme();
-
 async function restoreRegretCoinLedgerLocal() {
   const record = await getMeta(REGRET_COIN_LEDGER_META_KEY);
   regretCoinLedger = normalizeRegretCoinLedger(record ? record.value : []);
@@ -2638,6 +2746,12 @@ function scheduleSummarySave() {
   summarySaveTimer = setTimeout(saveSummaryNow, 2000);
 }
 
+function addFocusRatingHalfStar() {
+  summaryRatingValue = Math.max(0, Math.min(5, summaryRatingValue + 0.5));
+  renderSummaryRating();
+  scheduleSummarySave();
+}
+
 async function saveSummaryNow() {
   if (summarySaveTimer) {
     clearTimeout(summarySaveTimer);
@@ -2659,7 +2773,7 @@ async function saveSummaryNow() {
         summary.id === nextSummary.id ? nextSummary : summary
       );
       triggerChangeSync();
-      setSummaryStatus('已清空');
+      setSummaryStatus('');
       await renderContributionChart();
     }
     return;
@@ -2696,7 +2810,7 @@ async function saveSummaryNow() {
     summaries = [...summaries, { ...nextSummary, id }];
     triggerChangeSync();
   }
-  setSummaryStatus('已保存');
+  setSummaryStatus('');
   await renderContributionChart();
 }
 
@@ -2782,6 +2896,7 @@ let timerRunning = false;
 let timerRemainingMs = timerDurationMs;
 let timerStartAt = Date.now();
 let timerMode = 'work';
+let timerHasStartedWorkSession = false;
 let bellPhase = {
   state: 'work',
   restEndsAt: 0,
@@ -3371,6 +3486,7 @@ function startRestTimer() {
   hideTimerInlinePrompt();
   const now = Date.now();
   prepareRestTimer(DEFAULT_REST_MINUTES);
+  timerHasStartedWorkSession = true;
   timerRunning = true;
   timerStartAt = now;
   bellPhase = {
@@ -3431,8 +3547,10 @@ function tickTimer() {
       promptResumeWork();
     } else {
       playTone(600, 800);
+      addFocusRatingHalfStar();
       promptStartRest();
       finalizeTimerTimelineSegment('completed', now);
+      timerHasStartedWorkSession = false;
     }
     updateToggleLabel();
     persistTimerState();
@@ -3488,6 +3606,7 @@ function startTimer() {
   timerRunning = true;
   timerStartAt = now;
   if (timerMode === 'work') {
+    timerHasStartedWorkSession = true;
     resetBellSchedule(now);
     startTimerTimelineSegment(now);
   } else {
@@ -3523,6 +3642,10 @@ function pauseTimer() {
 }
 
 function stopTimer() {
+  if (!timerHasStartedWorkSession) {
+    setTimerStatus('还没有开始倒计时');
+    return;
+  }
   const now = Date.now();
   timerRunning = false;
   timerRemainingMs = timerDurationMs;
@@ -3531,8 +3654,10 @@ function stopTimer() {
   updateToggleLabel();
   hideTimerInlinePrompt();
   if (timerMode === 'work') {
+    addFocusRatingHalfStar();
     finalizeTimerTimelineSegment('stopped', now);
   }
+  timerHasStartedWorkSession = false;
   prepareWorkTimer(DEFAULT_MINUTES);
   persistTimerState();
   bgm.stop();
@@ -3549,6 +3674,7 @@ function applyTimerMinutes(value) {
   timerDurationMs = Math.floor(parsed) * 60 * 1000;
   timerRemainingMs = timerDurationMs;
   timerRunning = false;
+  timerHasStartedWorkSession = false;
   setTimerMode('work');
   updateTimerUI(timerRemainingMs);
   setTimerStatus('未开始');
@@ -3937,51 +4063,40 @@ async function restoreAlarmVolume() {
 
 restoreAlarmVolume();
 
-// -------- Service Worker --------
+// -------- Legacy PWA cleanup --------
 if ('serviceWorker' in navigator) {
-  let swRegistration = null;
-  const promptForUpdate = () => {
-    const confirmUpdate = window.confirm('发现新版本，是否刷新？');
-    if (!confirmUpdate) return;
-    if (swRegistration && swRegistration.waiting) {
-      swRegistration.waiting.postMessage({ type: 'SKIP_WAITING' });
-      return;
-    }
-    location.reload();
-  };
+  window.addEventListener('load', () => {
+    void (async () => {
+      let cleaned = false;
+      try {
+        const registrations = await navigator.serviceWorker.getRegistrations();
+        if (registrations.length) cleaned = true;
+        await Promise.all(registrations.map(reg => reg.unregister()));
+      } catch (err) {
+        console.error('[sw] unregister failed', err);
+      }
 
-  navigator.serviceWorker
-    .register('./sw.js?v=20260325-bgm-mobile', { updateViaCache: 'none' })
-    .then(reg => {
-      swRegistration = reg;
-      reg.update().catch(err => {
-        console.error('[sw] update failed', err);
-      });
-      if (reg.waiting) promptForUpdate();
-      reg.addEventListener('updatefound', () => {
-        const installing = reg.installing;
-        if (!installing) return;
-        installing.addEventListener('statechange', () => {
-          if (installing.state === 'installed' && navigator.serviceWorker.controller) {
-            promptForUpdate();
-          }
-        });
-      });
-    })
-    .catch(err => {
-      console.error('[sw] register failed', err);
-    });
+      try {
+        if ('caches' in window) {
+          const keys = await caches.keys();
+          if (keys.length) cleaned = true;
+          await Promise.all(keys.map(key => caches.delete(key)));
+        }
+      } catch (err) {
+        console.error('[sw] cache cleanup failed', err);
+      }
 
-  navigator.serviceWorker.addEventListener('message', event => {
-    if (event.data && event.data.type === 'SW_UPDATE_READY') {
-      promptForUpdate();
-    }
-  });
-
-  let refreshing = false;
-  navigator.serviceWorker.addEventListener('controllerchange', () => {
-    if (refreshing) return;
-    refreshing = true;
-    location.reload();
+      try {
+        const cleanupKey = 'jztodo.sw.cleaned';
+        if (cleaned && window.sessionStorage.getItem(cleanupKey) !== '1') {
+          window.sessionStorage.setItem(cleanupKey, '1');
+          location.reload();
+          return;
+        }
+        window.sessionStorage.removeItem(cleanupKey);
+      } catch (err) {
+        // ignore sessionStorage failures
+      }
+    })();
   });
 }

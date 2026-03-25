@@ -1,5 +1,5 @@
 :root {
-  --bg: #e8f7ee;
+  --bg: #ffffff;
   --card: #eef9f2;
   --border: #f1d5c5;
   --text: #5b4747;
@@ -14,17 +14,17 @@
   --todo-active-border: #ffb67f;
   --todo-active-glow: rgba(255, 182, 127, 0.28);
   --todo-running: #f08f7d;
-  --contrib-empty: #f0dede;
-  --contrib-1: #dff6eb;
-  --contrib-2: #c7efd9;
-  --contrib-3: #ace7c4;
-  --contrib-4: #8fddb0;
-  --contrib-5: #72d29b;
-  --contrib-6: #ffd98a;
-  --contrib-7: #ffc29f;
-  --contrib-8: #ffada1;
-  --contrib-9: #f596a6;
-  --contrib-10: #e97f95;
+  --contrib-empty: #e5e7eb;
+  --contrib-1: #fff1df;
+  --contrib-2: #ffe4c1;
+  --contrib-3: #ffd5a2;
+  --contrib-4: #ffc785;
+  --contrib-5: #ffb86b;
+  --contrib-6: #f4a261;
+  --contrib-7: #ee9553;
+  --contrib-8: #e38b6d;
+  --contrib-9: #d97a43;
+  --contrib-10: #c9652f;
 }
 
 *,
@@ -111,6 +111,7 @@ h2 {
 .focus-rating-card .summary-rating {
   display: inline-flex;
   align-items: center;
+  margin-left: 10px;
 }
 
 .contribution-card {
@@ -343,41 +344,61 @@ h2 {
   box-shadow: inset 0 0 0 1px rgba(148, 163, 184, 0.12);
 }
 
-.timeline-delete-btn {
+.timeline-actions-popover {
   position: absolute;
-  right: 6px;
-  top: 50%;
-  transform: translateY(-50%);
-  z-index: 2;
-  padding: 4px 10px;
-}
-
-.timeline-lane .timeline-delete-btn {
+  right: 12px;
+  top: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 108px;
+  gap: 8px;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: #fffaf6;
+  box-shadow: 0 10px 24px rgba(91, 71, 71, 0.12);
+  z-index: 4;
   opacity: 0;
   pointer-events: none;
+  transform: translateY(4px);
+  transition: opacity 0.14s ease, transform 0.14s ease;
 }
 
-.timeline-lane.is-hovered .timeline-delete-btn,
-.timeline-lane.is-hovered .timeline-edit-btn,
-.timeline-lane:focus-within .timeline-delete-btn {
+.timeline-actions-popover.is-visible {
   opacity: 1;
   pointer-events: auto;
+  transform: translateY(0);
 }
 
-.timeline-lane:focus-within .timeline-edit-btn {
-  opacity: 1;
-  pointer-events: auto;
-}
-
-.timeline-edit-btn {
-  position: absolute;
-  right: 62px;
-  top: 50%;
-  transform: translateY(-50%);
-  z-index: 2;
-  opacity: 0;
-  pointer-events: none;
+.timeline-popover-btn {
+  position: static;
   padding: 4px 10px;
+  opacity: 1;
+  pointer-events: auto;
+  border: none;
+  border-radius: 8px;
+  font-size: 12px;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.timeline-popover-btn.progress-btn {
+  background: #4f8cff;
+  color: #ffffff;
+}
+
+.timeline-popover-btn.progress-btn:hover {
+  background: #3d78e6;
+}
+
+.timeline-popover-btn.delete-btn {
+  background: #ff7f6e;
+  color: #ffffff;
+}
+
+.timeline-popover-btn.delete-btn:hover {
+  background: #ef6a58;
 }
 
 .timeline-segment {
@@ -682,8 +703,8 @@ h2 {
 }
 
 .contribution-cell.is-selected {
-  border-color: var(--text);
-  box-shadow: 0 0 0 1px var(--text);
+  border-color: #ffffff;
+  box-shadow: 0 0 0 1px #ffffff;
 }
 
 .contribution-cell[data-level="1"] { background: var(--contrib-1); }
@@ -733,8 +754,8 @@ h2 {
 }
 
 .star {
-  width: 22px;
-  height: 22px;
+  width: 26px;
+  height: 26px;
   border: none;
   background: transparent;
   cursor: pointer;
@@ -749,8 +770,8 @@ h2 {
   inset: 0;
   display: grid;
   place-items: center;
-  font-size: 20px;
-  color: var(--muted);
+  font-size: 24px;
+  color: #f4a261;
 }
 
 .star.full::before {
@@ -766,7 +787,7 @@ h2 {
 
 .star.half::after {
   content: '☆';
-  color: var(--muted);
+  color: #f4a261;
 }
 
 section {
@@ -875,9 +896,7 @@ section {
 }
 
 #summary-status {
-  margin: 6px 0 0;
-  color: #ef4444;
-  min-height: 20px;
+  display: none;
 }
 
 .summary-subtle {
@@ -990,6 +1009,32 @@ section {
   pointer-events: none;
   transition: opacity 0.15s ease;
   white-space: nowrap;
+}
+
+.timeline-actions-popover .timeline-popover-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.timeline-actions-popover .timeline-popover-btn.progress-btn {
+  background: #4f8cff;
+  color: #ffffff;
+}
+
+.timeline-actions-popover .timeline-popover-btn.progress-btn:hover {
+  background: #3d78e6;
+}
+
+.timeline-actions-popover .timeline-popover-btn.delete-btn {
+  background: #ff7f6e;
+  color: #ffffff;
+}
+
+.timeline-actions-popover .timeline-popover-btn.delete-btn:hover {
+  background: #ef6a58;
 }
 
 .edit-btn {
