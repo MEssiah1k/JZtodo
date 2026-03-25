@@ -1543,27 +1543,36 @@ section {
   }
 
   .contribution-layout {
-    flex-direction: column;
-    align-items: center;
-    justify-content: flex-start;
-    gap: 12px;
+    flex-direction: row;
+    align-items: flex-start;
+    justify-content: center;
+    gap: 8px;
   }
 
   .contribution-grid {
-    justify-self: center;
+    flex: 1 1 auto;
+    min-width: 0;
   }
 
   .contribution-periods {
-    width: 100%;
-    flex-direction: row;
-    flex-wrap: wrap;
-    justify-content: center;
+    width: 82px;
+    max-height: 168px;
+    flex-direction: column;
+    flex-wrap: nowrap;
+    justify-content: flex-start;
+    align-items: stretch;
+    gap: 6px;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding-right: 2px;
   }
 
   .contribution-period {
     min-width: 0;
-    flex: 0 1 auto;
-    padding: 8px 12px;
+    flex: 0 0 auto;
+    width: 100%;
+    padding: 7px 8px;
+    font-size: 11px;
     text-align: center;
   }
 
