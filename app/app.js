@@ -751,7 +751,7 @@ function formatContributionMonthLabel(period) {
 }
 
 function formatContributionMonthTitle(period) {
-  return formatContributionMonthLabel(period);
+  return `${formatContributionMonthLabel(period)}热力图`;
 }
 
 function getContributionMonthRange(period) {
@@ -1852,16 +1852,20 @@ function renderTimerTimeline() {
 async function renderContributionChart() {
   if (!contributionChart && !taskStatusChart) return;
   const allTodos = await getAllTodos();
-  const focusCountByDate = new Map();
+  const allSummaries = await getAllSummaries();
+  const focusRatingByDate = new Map();
   const todoStatusByDate = new Map();
 
-  Object.keys(timerTimelineByDate || {}).forEach(dateStr => {
-    if (!dateStr) return;
-    focusCountByDate.set(dateStr, getTodayFocusCount(dateStr));
-  });
-  if (activeTimerSegment && activeTimerSegment.date) {
-    focusCountByDate.set(activeTimerSegment.date, getTodayFocusCount(activeTimerSegment.date));
-  }
+  allSummaries
+    .filter(summary => !summary.deletedAt && summary.date)
+    .forEach(summary => {
+      const existing = focusRatingByDate.get(summary.date);
+      const summaryTime = Date.parse(summary.updatedAt || summary.createdAt || 0);
+      const existingTime = existing ? Date.parse(existing.updatedAt || existing.createdAt || 0) : -Infinity;
+      if (!existing || summaryTime >= existingTime) {
+        focusRatingByDate.set(summary.date, summary);
+      }
+    });
 
   allTodos
     .filter(todo => !todo.deletedAt && todo.date)
@@ -1872,7 +1876,12 @@ async function renderContributionChart() {
       todoStatusByDate.set(todo.date, current);
     });
 
-  contributionScores = focusCountByDate;
+  contributionScores = new Map(
+    [...focusRatingByDate.entries()].map(([date, summary]) => [
+      date,
+      Number.isFinite(summary.rating) ? summary.rating : 0
+    ])
+  );
   taskCompletionStatusByDate = new Map(
     [...todoStatusByDate.entries()].map(([date, status]) => [
       date,
@@ -1881,7 +1890,7 @@ async function renderContributionChart() {
   );
 
   const periods = buildContributionMonthPeriods(
-    [...new Set([...focusCountByDate.keys(), ...todoStatusByDate.keys()])],
+    [...new Set([...focusRatingByDate.keys(), ...todoStatusByDate.keys()])],
     new Date()
   );
   const currentPeriod = getContributionMonthPeriod(new Date());
@@ -2023,8 +2032,9 @@ async function renderContributionChart() {
     chartEl: contributionChart,
     includePeriodNav: true,
     getCellData: dateStr => {
-      const focusCount = contributionScores.get(dateStr) ?? 0;
-      const level = Math.max(0, Math.min(10, focusCount));
+      const rating = contributionScores.get(dateStr) ?? 0;
+      const focusCount = Math.max(0, Math.min(10, Math.round(rating * 2)));
+      const level = focusCount;
       return {
         level,
         tooltip: `${formatTooltipDate(dateStr)} · 专注 ${focusCount} 次`,
@@ -4090,40 +4100,10 @@ async function restoreAlarmVolume() {
 
 restoreAlarmVolume();
 
-// -------- Legacy PWA cleanup --------
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
-    void (async () => {
-      let cleaned = false;
-      try {
-        const registrations = await navigator.serviceWorker.getRegistrations();
-        if (registrations.length) cleaned = true;
-        await Promise.all(registrations.map(reg => reg.unregister()));
-      } catch (err) {
-        console.error('[sw] unregister failed', err);
-      }
-
-      try {
-        if ('caches' in window) {
-          const keys = await caches.keys();
-          if (keys.length) cleaned = true;
-          await Promise.all(keys.map(key => caches.delete(key)));
-        }
-      } catch (err) {
-        console.error('[sw] cache cleanup failed', err);
-      }
-
-      try {
-        const cleanupKey = 'jztodo.sw.cleaned';
-        if (cleaned && window.sessionStorage.getItem(cleanupKey) !== '1') {
-          window.sessionStorage.setItem(cleanupKey, '1');
-          location.reload();
-          return;
-        }
-        window.sessionStorage.removeItem(cleanupKey);
-      } catch (err) {
-        // ignore sessionStorage failures
-      }
-    })();
+    navigator.serviceWorker.register('./sw.js?v=20260325-pwa-restore').catch(err => {
+      console.error('[sw] register failed', err);
+    });
   });
 }
