@@ -126,7 +126,6 @@ const timerInlinePromptTextEl = document.getElementById('timer-inline-prompt-tex
 const timerInlinePromptConfirmBtn = document.getElementById('timer-inline-prompt-confirm');
 const timerInlinePromptCancelBtn = document.getElementById('timer-inline-prompt-cancel');
 const bgmStatusEl = document.getElementById('bgm-status');
-const timerVersionEl = document.getElementById('timer-version');
 const timerToggleBtn = document.getElementById('timer-toggle');
 const timerStopBtn = document.getElementById('timer-stop');
 const bgmFileInput = document.getElementById('bgm-file');
@@ -140,7 +139,6 @@ const regretCoinBalanceEl = document.getElementById('regret-coin-balance');
 const regretCoinStatusEl = document.getElementById('regret-coin-status');
 const regretCoinSpendInput = document.getElementById('regret-coin-spend-input');
 const regretCoinSpendBtn = document.getElementById('regret-coin-spend-btn');
-const APP_VERSION = 'v0.1.3';
 const RECURRENCE_SKIP_META_KEY = 'recurrenceSkips';
 const TIMER_TIMELINE_META_KEY = 'timerTimelineByDate';
 const TIMER_TIMELINE_ACTIVE_META_KEY = 'timerTimelineActive';
@@ -2533,7 +2531,7 @@ function buildRecurrenceDateOptions() {
 buildRecurrenceDateOptions();
 
 let summarySaveTimer = null;
-let themeDark = true;
+let themeDark = false;
 let summaryRatingValue = 0;
 let bgmName = 'pinknoise';
 let syncReady = false;
@@ -2599,8 +2597,11 @@ if (themeToggleBtn) {
 
 async function restoreTheme() {
   const record = await getMeta('theme');
-  if (record && record.value) {
-    themeDark = record.value === 'dark';
+  if (record && record.value === 'light') {
+    themeDark = false;
+  } else {
+    themeDark = false;
+    await setMeta('theme', 'light');
   }
   applyTheme();
 }
@@ -3591,7 +3592,6 @@ if (timerInlinePromptCancelBtn) {
 
 updateTimerUI(timerRemainingMs);
 setTimerStatus('未开始');
-if (timerVersionEl) timerVersionEl.textContent = `版本 ${APP_VERSION}`;
 updateToggleLabel();
 bgm.init();
 renderBgmStatus(bgm.getPlaybackState());

@@ -7,14 +7,13 @@
   <link rel="stylesheet" href="style.css?v=20260325-bgm-mobile" />
   <link rel="manifest" href="app/manifest.json?v=20260325-bgm-mobile" />
 </head>
-<body class="dark">
+<body>
   <button id="theme-toggle" class="theme-toggle" type="button" aria-label="切换主题">☾</button>
   <button id="bgm-toggle" class="bgm-toggle" type="button" aria-label="BGM 设置">♪</button>
   <div class="page-card">
   <section id="timer-module">
     <div class="timer-header">
       <h2>倒计时</h2>
-      <div id="timer-version" aria-hidden="true"></div>
     </div>
     <div class="module-card">
       <div class="timer-row">
@@ -206,14 +205,19 @@
   </div>
 
   <section id="summary-module">
-    <div id="summary-rating" class="summary-rating" aria-label="今日评分">
-      <button type="button" class="star" data-star="1" aria-label="星级 1"></button>
-      <button type="button" class="star" data-star="2" aria-label="星级 2"></button>
-      <button type="button" class="star" data-star="3" aria-label="星级 3"></button>
-      <button type="button" class="star" data-star="4" aria-label="星级 4"></button>
-      <button type="button" class="star" data-star="5" aria-label="星级 5"></button>
+    <div class="contribution-card focus-rating-card">
+      <div class="contribution-header">
+        <h3>专注次数</h3>
+      </div>
+      <div id="summary-rating" class="summary-rating" aria-label="今日评分">
+        <button type="button" class="star" data-star="1" aria-label="星级 1"></button>
+        <button type="button" class="star" data-star="2" aria-label="星级 2"></button>
+        <button type="button" class="star" data-star="3" aria-label="星级 3"></button>
+        <button type="button" class="star" data-star="4" aria-label="星级 4"></button>
+        <button type="button" class="star" data-star="5" aria-label="星级 5"></button>
+      </div>
+      <p id="summary-status" aria-live="polite"></p>
     </div>
-    <p id="summary-status" aria-live="polite"></p>
     <div class="contribution-card">
       <div class="contribution-header">
         <h3 id="timer-timeline-title">当日工作时间段</h3>
@@ -230,7 +234,7 @@
     </div>
   </section>
 
-  <script type="module" src="app/app.js?v=20260325-rating-scale-fix"></script>
+  <script type="module" src="app/app.js?v=20260325-ui-polish"></script>
   </div>
 
   <div id="bgm-modal" class="modal-overlay hidden" role="dialog" aria-modal="true">
