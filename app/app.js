@@ -694,9 +694,6 @@ async function settlePreviousDayIfNeeded(options = {}) {
   const focusCount = getTodayFocusCount(targetDate);
   const settlement = buildDailySettlement(targetDate, rating, focusCount);
   renderYesterdayFocusCount(today);
-  if (summaryStatus && selectedDate === today) {
-    summaryStatus.textContent = `已更新前日专注次数：${settlement.focusCount}`;
-  }
 }
 
 function getContributionHalfPeriod(date = new Date()) {
@@ -940,6 +937,7 @@ async function moveTodoToTomorrow(todo) {
 }
 
 function renderTodos() {
+  if (!list) return;
   list.innerHTML = '';
   if (completedList) completedList.innerHTML = '';
   runningTimeEls.clear();
@@ -1422,51 +1420,53 @@ function parseCategorizedText(text) {
   };
 }
 
-addBtn.onclick = async () => {
-  const text = input.value.trim();
-  if (!text) {
-    setStatus('请输入待办事项');
-    return;
-  }
-  let dueMinutes = null;
-  if (dueInput && dueInput.value.trim()) {
-    const parsed = Number(dueInput.value);
-    if (!Number.isFinite(parsed) || parsed < 0) {
-      setStatus('预计时长需为非负数字');
+if (addBtn && input) {
+  addBtn.onclick = async () => {
+    const text = input.value.trim();
+    if (!text) {
+      setStatus('请输入待办事项');
       return;
     }
-    dueMinutes = Math.floor(parsed);
-  }
-  const now = new Date().toISOString();
-  const initResult = syncInitPromise ? await syncInitPromise : null;
-  const userId = currentUserId ||
-    (initResult && initResult.userId ? initResult.userId : ensureUserId());
-  await addTodo({
-    date: selectedDate,
-    text: formatTodoText(todoCategory ? todoCategory.value : 'Work', text),
-    completed: false,
-    sortOrder: getNextPendingSortOrder(),
-    createdAt: now,
-    updatedAt: now,
-    deletedAt: null,
-    dueMinutes,
-    uuid: generateUUID(),
-    userId
-  });
-  triggerChangeSync();
-  input.value = '';
-  if (dueInput) dueInput.value = '';
-  setStatus('');
-  loadTodos();
-};
+    let dueMinutes = null;
+    if (dueInput && dueInput.value.trim()) {
+      const parsed = Number(dueInput.value);
+      if (!Number.isFinite(parsed) || parsed < 0) {
+        setStatus('预计时长需为非负数字');
+        return;
+      }
+      dueMinutes = Math.floor(parsed);
+    }
+    const now = new Date().toISOString();
+    const initResult = syncInitPromise ? await syncInitPromise : null;
+    const userId = currentUserId ||
+      (initResult && initResult.userId ? initResult.userId : ensureUserId());
+    await addTodo({
+      date: selectedDate,
+      text: formatTodoText(todoCategory ? todoCategory.value : 'Work', text),
+      completed: false,
+      sortOrder: getNextPendingSortOrder(),
+      createdAt: now,
+      updatedAt: now,
+      deletedAt: null,
+      dueMinutes,
+      uuid: generateUUID(),
+      userId
+    });
+    triggerChangeSync();
+    input.value = '';
+    if (dueInput) dueInput.value = '';
+    setStatus('');
+    loadTodos();
+  };
 
-input.addEventListener('keydown', event => {
-  if (event.key === 'Enter') addBtn.click();
-});
+  input.addEventListener('keydown', event => {
+    if (event.key === 'Enter') addBtn.click();
+  });
+}
 
 if (dueInput) {
   dueInput.addEventListener('keydown', event => {
-    if (event.key === 'Enter') addBtn.click();
+    if (event.key === 'Enter' && addBtn) addBtn.click();
   });
 }
 
@@ -1480,7 +1480,9 @@ async function loadSummaries() {
       const bTime = Date.parse(b.updatedAt || b.createdAt || 0);
       return bTime - aTime;
     })[0];
-  summaryInput.value = latest ? latest.text : '';
+  if (summaryInput) {
+    summaryInput.value = latest ? latest.text : '';
+  }
   summaryRatingValue = latest && typeof latest.rating === 'number' ? latest.rating : 0;
   renderSummaryRating();
   renderDailyFatigueQuestion();
@@ -2701,7 +2703,7 @@ async function saveSummaryNow() {
     clearTimeout(summarySaveTimer);
     summarySaveTimer = null;
   }
-  const text = summaryInput.value.trim();
+  const text = summaryInput ? summaryInput.value.trim() : '';
   const now = new Date().toISOString();
   const existing = getLatestSummaryRecord();
 
@@ -2759,14 +2761,16 @@ async function saveSummaryNow() {
 }
 
 
-summaryInput.addEventListener('input', () => {
-  autoResizeSummary();
-  scheduleSummarySave();
-});
+if (summaryInput) {
+  summaryInput.addEventListener('input', () => {
+    autoResizeSummary();
+    scheduleSummarySave();
+  });
 
-summaryInput.addEventListener('blur', () => {
-  void saveSummaryNow();
-});
+  summaryInput.addEventListener('blur', () => {
+    void saveSummaryNow();
+  });
+}
 
 if (fatigueYesBtn) {
   fatigueYesBtn.addEventListener('click', () => {
@@ -4008,7 +4012,7 @@ if ('serviceWorker' in navigator) {
   };
 
   navigator.serviceWorker
-    .register('./sw.js?v=20260321-daily-settlement', { updateViaCache: 'none' })
+    .register('./sw.js?v=20260325-bgm-mobile', { updateViaCache: 'none' })
     .then(reg => {
       swRegistration = reg;
       reg.update().catch(err => {

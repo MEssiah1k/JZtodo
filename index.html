@@ -4,8 +4,8 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>JZtodo Timer</title>
-  <link rel="stylesheet" href="style.css?v=20260321-daily-settlement" />
-  <link rel="manifest" href="app/manifest.json?v=20260321-daily-settlement" />
+  <link rel="stylesheet" href="style.css?v=20260325-bgm-mobile" />
+  <link rel="manifest" href="app/manifest.json?v=20260325-bgm-mobile" />
 </head>
 <body class="dark">
   <button id="theme-toggle" class="theme-toggle" type="button" aria-label="切换主题">☾</button>
@@ -58,33 +58,6 @@
       </div>
       <span id="sync-status" class="sync-status">未同步</span>
     </div>
-  </section>
-
-  <section id="todo-module">
-    <div class="section-header">
-      <h2>待办事项</h2>
-      <button id="recurrence-open" type="button" class="header-action">重复规则</button>
-    </div>
-    <div class="input-row todo-category-row">
-      <select id="todo-category" aria-label="选择任务种类">
-        <option value="Work" selected>Work</option>
-        <option value="Life">Life</option>
-        <option value="Health">Health</option>
-        <option value="Social">Social</option>
-        <option value="Growth">Growth</option>
-        <option value="Leisure">Leisure</option>
-        <option value="Plan">Plan</option>
-      </select>
-    </div>
-    <div class="input-row">
-      <input id="todo-input" placeholder="输入待办事项" />
-      <button id="add-btn" type="button">添加</button>
-    </div>
-    <div class="input-row secondary-row">
-      <input id="todo-due" type="number" inputmode="numeric" min="0" step="1" placeholder="预计时长(min)" aria-label="预计时长" />
-    </div>
-    <p id="status" aria-live="polite"></p>
-    <ul id="todo-list"></ul>
   </section>
 
   <div id="recurrence-modal" class="modal-overlay hidden" role="dialog" aria-modal="true">
@@ -233,7 +206,6 @@
   </div>
 
   <section id="summary-module">
-    <h2>今日总结</h2>
     <div id="summary-rating" class="summary-rating" aria-label="今日评分">
       <button type="button" class="star" data-star="1" aria-label="星级 1"></button>
       <button type="button" class="star" data-star="2" aria-label="星级 2"></button>
@@ -241,7 +213,6 @@
       <button type="button" class="star" data-star="4" aria-label="星级 4"></button>
       <button type="button" class="star" data-star="5" aria-label="星级 5"></button>
     </div>
-    <textarea id="summary-input" rows="4" placeholder="记录今天的总结"></textarea>
     <p id="summary-status" aria-live="polite"></p>
     <p id="yesterday-focus-count" class="summary-subtle"></p>
     <div class="contribution-card">
@@ -258,19 +229,9 @@
       </div>
       <div id="contribution-chart" class="contribution-chart" aria-label="固定半年评分热力图"></div>
     </div>
-    <div class="contribution-card">
-      <div class="contribution-header">
-        <h3 id="task-status-title">2026上半年任务完成图</h3>
-        <span id="task-status-summary" class="contribution-summary"></span>
-      </div>
-      <div id="task-status-chart" class="contribution-chart" aria-label="固定半年任务完成情况图"></div>
-    </div>
   </section>
-  <section id="completed-module" class="completed-module hidden">
-    <h2>已完成事项</h2>
-    <ul id="completed-list"></ul>
-  </section>
-  <script type="module" src="app/app.js?v=20260321-daily-settlement"></script>
+
+  <script type="module" src="app/app.js?v=20260325-bgm-mobile"></script>
   </div>
 
   <div id="bgm-modal" class="modal-overlay hidden" role="dialog" aria-modal="true">
