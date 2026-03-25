@@ -82,6 +82,24 @@ function setStatus(state, detail = '') {
   if (DEBUG) console.log('[sync][status]', state, detail);
 }
 
+function normalizeRatingForRemote(rating) {
+  const value = Number(rating);
+  if (!Number.isFinite(value)) return 0;
+  if (value <= 5) {
+    return Math.max(0, Math.min(10, Math.round(value * 2)));
+  }
+  return Math.max(0, Math.min(10, Math.round(value)));
+}
+
+function normalizeRatingFromRemote(rating) {
+  const value = Number(rating);
+  if (!Number.isFinite(value)) return 0;
+  if (value <= 5 && Number.isInteger(value)) {
+    return value;
+  }
+  return Math.max(0, Math.min(5, value / 2));
+}
+
 function mapTodoToRemote(todo) {
   return {
     uuid: todo.uuid,
@@ -95,14 +113,11 @@ function mapTodoToRemote(todo) {
 }
 
 function mapSummaryToRemote(summary) {
-  const normalizedRating = Number.isFinite(Number(summary.rating))
-    ? Math.round(Number(summary.rating))
-    : 0;
   return {
     uuid: summary.uuid,
     date: summary.date,
     text: summary.text,
-    rating: normalizedRating,
+    rating: normalizeRatingForRemote(summary.rating),
     created_at: summary.createdAt,
     updated_at: summary.updatedAt,
     deleted_at: summary.deletedAt
@@ -158,7 +173,7 @@ function mapSummaryFromRemote(row) {
     uuid: row.uuid,
     date: row.date,
     text: row.text,
-    rating: row.rating ?? 0,
+    rating: normalizeRatingFromRemote(row.rating),
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     deletedAt: row.deleted_at || null
