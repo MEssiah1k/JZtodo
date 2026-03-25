@@ -1543,28 +1543,33 @@ section {
   }
 
   .contribution-layout {
-    flex-direction: row;
-    align-items: flex-start;
-    justify-content: center;
-    gap: 10px;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 12px;
+  }
+
+  .contribution-grid {
+    justify-self: center;
   }
 
   .contribution-periods {
     width: 100%;
     flex-direction: row;
     flex-wrap: wrap;
+    justify-content: center;
   }
 
   .contribution-period {
     min-width: 0;
-    flex: 1 1 calc(50% - 4px);
+    flex: 0 1 auto;
+    padding: 8px 12px;
     text-align: center;
   }
 
   .contribution-chart {
-    overflow-x: auto;
+    overflow-x: hidden;
     overflow-y: hidden;
-    -webkit-overflow-scrolling: touch;
   }
 
   .date-sync-group,

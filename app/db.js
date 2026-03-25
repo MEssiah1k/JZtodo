@@ -84,6 +84,27 @@ export function openDB() {
   });
 }
 
+export function clearLocalDatabase() {
+  return new Promise((resolve, reject) => {
+    const closeRequest = indexedDB.open(DB_NAME, DB_VERSION);
+
+    closeRequest.onsuccess = () => {
+      closeRequest.result.close();
+      const deleteRequest = indexedDB.deleteDatabase(DB_NAME);
+      deleteRequest.onsuccess = () => resolve(true);
+      deleteRequest.onerror = () => reject(deleteRequest.error);
+      deleteRequest.onblocked = () => reject(new Error('数据库被占用，无法清空'));
+    };
+
+    closeRequest.onerror = () => {
+      const deleteRequest = indexedDB.deleteDatabase(DB_NAME);
+      deleteRequest.onsuccess = () => resolve(true);
+      deleteRequest.onerror = () => reject(deleteRequest.error);
+      deleteRequest.onblocked = () => reject(new Error('数据库被占用，无法清空'));
+    };
+  });
+}
+
 export async function getAllTodos() {
   const db = await openDB();
   return new Promise(resolve => {

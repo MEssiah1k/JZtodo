@@ -14,7 +14,8 @@ import {
   addRecurrenceRule,
   updateRecurrenceRule,
   deleteRecurrenceRule,
-  getTodosByRuleId
+  getTodosByRuleId,
+  clearLocalDatabase
 } from './db.js';
 import * as bgm from './bgm.js';
 import {
@@ -3857,22 +3858,48 @@ if (syncFullBtn) {
 if (syncClearBtn) {
   syncClearBtn.addEventListener('click', async () => {
     const confirmed = await openPromptModal(
-      '危险操作：将清空 Supabase 云端的 todos、summaries、recurrence_rules、timer_timeline 全部数据。\n此操作不可恢复，是否继续？',
+      '危险操作：将清空本地和云端的全部数据。\n包括 todos、summaries、recurrence_rules、timer_timeline 以及本地缓存。\n此操作不可恢复，是否继续？',
       { confirmText: '确认清空', cancelText: '取消', showCancel: true }
     );
     if (!confirmed) return;
 
     try {
-      setSyncStatus('正在清空云端数据...');
-      const cleared = await clearAllRemoteData();
-      if (!cleared) {
-        setSyncStatus('清空失败：同步未初始化');
-        return;
+      setSyncStatus('正在清空数据...');
+      if (syncReady) {
+        const cleared = await clearAllRemoteData();
+        if (!cleared) {
+          setSyncStatus('清空失败：同步未初始化');
+          return;
+        }
       }
-      setSyncStatus('云端数据已清空');
+
+      await clearLocalDatabase();
+
+      [
+        TIMER_STATE_LOCAL_KEY,
+        TIMER_TIMELINE_LOCAL_KEY,
+        TIMER_TIMELINE_ACTIVE_LOCAL_KEY,
+        TIMER_LEASE_KEY,
+        IN_PROGRESS_LOCAL_KEY
+      ].forEach(key => {
+        try {
+          window.localStorage.removeItem(key);
+        } catch (_) {
+          // 忽略本地存储清理失败
+        }
+      });
+
+      try {
+        window.sessionStorage.removeItem('jztodo.sw.cleaned');
+      } catch (_) {
+        // 忽略会话存储清理失败
+      }
+
+      setSyncStatus('数据已清空，正在刷新...');
+      window.location.reload();
     } catch (err) {
       setSyncStatus('清空失败');
-      console.error('[sync] clear cloud error', err);
+      console.error('[sync] clear all data error', err);
     }
   });
 }
