@@ -1707,6 +1707,12 @@ section {
   white-space: nowrap;
 }
 
+#timer-toggle:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  filter: grayscale(0.15);
+}
+
 #timer-status,
 .bgm-status {
   margin-top: 8px;

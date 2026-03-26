@@ -2701,9 +2701,11 @@ restoreInProgressPromise = restoreInProgressTodos();
 ensureRunningTicker();
 
 let latestBgmDebugSnapshot = null;
+let currentBgmPlaybackState = 'stopped';
 
 function renderBgmStatus(state) {
   if (!bgmStatusEl) return;
+  currentBgmPlaybackState = state || 'stopped';
   const labels = {
     stopped: '未播放',
     paused: '已暂停',
@@ -2712,6 +2714,7 @@ function renderBgmStatus(state) {
     playing: '播放中'
   };
   bgmStatusEl.textContent = `BGM：${labels[state] || '未播放'}`;
+  updateToggleLabel();
 }
 
 function renderBgmDebug(snapshot) {
@@ -4105,6 +4108,9 @@ if (timelineEditSaveBtn) {
 
 function updateToggleLabel() {
   if (!timerToggleBtn) return;
+  const bgmDownloading = currentBgmPlaybackState === 'downloading';
+  timerToggleBtn.disabled = bgmDownloading;
+  timerToggleBtn.setAttribute('aria-disabled', bgmDownloading ? 'true' : 'false');
   if (timerRunning) {
     timerToggleBtn.textContent = '暂停';
     return;
