@@ -4175,7 +4175,7 @@ restoreAlarmVolume();
 
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
-    navigator.serviceWorker.register('./sw.js?v=20260326-bgm-read-timeout').catch(err => {
+    navigator.serviceWorker.register('./sw.js?v=20260326-bgm-html-events').catch(err => {
       console.error('[sw] register failed', err);
     });
   });

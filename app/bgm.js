@@ -303,6 +303,36 @@ function ensureHtmlAudio() {
   htmlAudio.loop = true;
   htmlAudio.preload = 'auto';
   htmlAudio.volume = volume;
+  htmlAudio.playsInline = true;
+  htmlAudio.crossOrigin = 'anonymous';
+  htmlAudio.addEventListener('loadedmetadata', () => {
+    pushDebugLog('html.loadedmetadata', `duration=${Number.isFinite(htmlAudio.duration) ? htmlAudio.duration.toFixed(2) : 'unknown'}`);
+    emitDebug();
+  });
+  htmlAudio.addEventListener('loadeddata', () => {
+    pushDebugLog('html.loadeddata', `readyState=${htmlAudio.readyState}`);
+    emitDebug();
+  });
+  htmlAudio.addEventListener('canplay', () => {
+    pushDebugLog('html.canplay', `readyState=${htmlAudio.readyState}`);
+    emitDebug();
+  });
+  htmlAudio.addEventListener('canplaythrough', () => {
+    pushDebugLog('html.canplaythrough', `readyState=${htmlAudio.readyState}`);
+    emitDebug();
+  });
+  htmlAudio.addEventListener('progress', () => {
+    pushDebugLog('html.progress', `readyState=${htmlAudio.readyState} networkState=${htmlAudio.networkState}`);
+    emitDebug();
+  });
+  htmlAudio.addEventListener('stalled', () => {
+    pushDebugLog('html.stalled', `readyState=${htmlAudio.readyState} networkState=${htmlAudio.networkState}`);
+    emitDebug();
+  });
+  htmlAudio.addEventListener('suspend', () => {
+    pushDebugLog('html.suspend', `readyState=${htmlAudio.readyState} networkState=${htmlAudio.networkState}`);
+    emitDebug();
+  });
   htmlAudio.addEventListener('playing', () => {
     pushDebugLog('html.playing');
     setPlaybackState('playing');
@@ -343,6 +373,8 @@ async function playViaHtmlAudio() {
   if (audio.src !== nextSrc) {
     audio.src = nextSrc;
     pushDebugLog('html.src.set', nextSrc);
+    audio.load();
+    pushDebugLog('html.load.call');
   }
   audio.volume = volume;
   pushDebugLog('html.play.call');
