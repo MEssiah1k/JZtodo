@@ -363,7 +363,7 @@ function ensureHtmlAudio() {
   });
   htmlAudio.addEventListener('pause', () => {
     pushDebugLog('html.pause');
-    if (!shouldBePlaying) {
+    if (!shouldBePlaying && playbackState !== 'stopped') {
       setPlaybackState('paused');
     }
     emitDebug();
@@ -393,6 +393,24 @@ function resolveSourceUrl() {
   return sourceConfig.value;
 }
 
+function prewarmHtmlAudio() {
+  const audio = ensureHtmlAudio();
+  const nextSrc = resolveSourceUrl();
+  if (audio.src === nextSrc) {
+    pushDebugLog('html.prewarm.skip', 'same-src');
+    return;
+  }
+  audio.pause();
+  audio.removeAttribute('src');
+  audio.load();
+  pushDebugLog('html.prewarm.reset');
+  audio.src = nextSrc;
+  pushDebugLog('html.prewarm.src', nextSrc);
+  audio.load();
+  pushDebugLog('html.prewarm.load');
+  emitDebug();
+}
+
 async function playViaHtmlAudio() {
   const audio = ensureHtmlAudio();
   const nextSrc = resolveSourceUrl();
@@ -419,6 +437,13 @@ function unlockPlayback() {
   interactionLogCount += 1;
   if (interactionLogCount === 1) {
     pushDebugLog('user.interaction', 'first');
+    if (preferHtmlAudio) {
+      try {
+        prewarmHtmlAudio();
+      } catch (error) {
+        pushDebugLog('html.prewarm.failed', summarizeError(error));
+      }
+    }
   }
   if (shouldBePlaying && playbackState === 'paused') {
     void play();
