@@ -11,6 +11,7 @@ let audioContext = null;
 let currentSourceNode = null;
 let currentGainNode = null;
 let htmlAudio = null;
+let htmlMediaKind = 'audio';
 let userInteracted = false;
 let shouldBePlaying = false;
 let volume = 0.6;
@@ -531,13 +532,49 @@ function stopCurrentPlayback() {
   emitDebug();
 }
 
+function isVideoLikeFileSource() {
+  if (sourceConfig.type !== 'file') return false;
+  const file = sourceConfig.value;
+  if (!file) return false;
+  const fileType = String(file.type || '').toLowerCase();
+  const fileName = String(file.name || '').toLowerCase();
+  return (
+    fileType.startsWith('video/') ||
+    /\.(mp4|m4v|mov|webm)$/i.test(fileName)
+  );
+}
+
+function destroyHtmlMediaElement() {
+  if (!htmlAudio) return;
+  htmlAudio.pause();
+  htmlAudio.removeAttribute('src');
+  htmlAudio.load();
+  if (htmlMediaKind === 'video' && htmlAudio.parentNode) {
+    htmlAudio.parentNode.removeChild(htmlAudio);
+  }
+  htmlAudio = null;
+}
+
 function ensureHtmlAudio() {
-  if (htmlAudio) return htmlAudio;
-  htmlAudio = new Audio();
+  const nextKind = isVideoLikeFileSource() ? 'video' : 'audio';
+  if (htmlAudio && htmlMediaKind === nextKind) return htmlAudio;
+  destroyHtmlMediaElement();
+  htmlMediaKind = nextKind;
+  htmlAudio = nextKind === 'video' ? document.createElement('video') : new Audio();
   htmlAudio.loop = true;
   htmlAudio.preload = 'auto';
   htmlAudio.volume = volume;
   htmlAudio.playsInline = true;
+  htmlAudio.setAttribute('playsinline', 'true');
+  htmlAudio.setAttribute('webkit-playsinline', 'true');
+  if (nextKind === 'video') {
+    htmlAudio.controls = false;
+    htmlAudio.muted = false;
+    htmlAudio.style.display = 'none';
+    htmlAudio.disablePictureInPicture = true;
+    document.body.appendChild(htmlAudio);
+  }
+  pushDebugLog('html.element', nextKind);
   htmlAudio.addEventListener('loadstart', () => {
     pushDebugLog('html.loadstart', `readyState=${htmlAudio.readyState} networkState=${htmlAudio.networkState}`);
     emitDebug();

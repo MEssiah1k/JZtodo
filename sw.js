@@ -1,16 +1,16 @@
-const CACHE_NAME = 'jztodo-timer-cache-v75';
+const CACHE_NAME = 'jztodo-timer-cache-v76';
 const CACHE_PREFIX = 'jztodo-timer-cache-';
 const CORE_ASSETS = [
   './',
   './index.html',
   './style.light.css?v=20260325-mobile-heatmap-scroll-nav',
-  './app/app.js?v=20260326-bgm-unlock-timer',
+  './app/app.js?v=20260326-bgm-local-video',
   './app/db.js?v=20260325-pwa-restore',
   './app/sync.js?v=20260325-pwa-restore',
   './app/manifest.json?v=20260325-pwa-restore',
-  './app/bgm.js?v=20260326-bgm-unlock-timer',
+  './app/bgm.js?v=20260326-bgm-local-video',
   './app/icon.svg?v=2',
-  './sw.js?v=20260326-bgm-unlock-timer'
+  './sw.js?v=20260326-bgm-local-video'
 ];
 
 self.addEventListener('install', event => {

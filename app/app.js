@@ -17,7 +17,7 @@ import {
   getTodosByRuleId,
   clearLocalDatabase
 } from './db.js';
-import * as bgm from './bgm.js?v=20260326-bgm-unlock-timer';
+import * as bgm from './bgm.js?v=20260326-bgm-local-video';
 import {
   initSync,
   syncNow,
@@ -32,7 +32,7 @@ import {
   insertRemoteKvIfAbsent
 } from './sync.js';
 
-const APP_BUILD_VERSION = '20260326-bgm-unlock-timer';
+const APP_BUILD_VERSION = '20260326-bgm-local-video';
 
 const input = document.getElementById('todo-input');
 const todoCategory = document.getElementById('todo-category');
@@ -4234,7 +4234,7 @@ restoreAlarmVolume();
 
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
-    navigator.serviceWorker.register('./sw.js?v=20260326-bgm-unlock-timer').catch(err => {
+    navigator.serviceWorker.register('./sw.js?v=20260326-bgm-local-video').catch(err => {
       console.error('[sw] register failed', err);
     });
   });
