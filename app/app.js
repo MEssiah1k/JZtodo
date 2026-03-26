@@ -17,7 +17,7 @@ import {
   getTodosByRuleId,
   clearLocalDatabase
 } from './db.js';
-import * as bgm from './bgm.js';
+import * as bgm from './bgm.js?v=20260326-bgm-html-reset';
 import {
   initSync,
   syncNow,
@@ -4194,7 +4194,7 @@ restoreAlarmVolume();
 
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
-    navigator.serviceWorker.register('./sw.js?v=20260326-bgm-mobile-mp3').catch(err => {
+    navigator.serviceWorker.register('./sw.js?v=20260326-bgm-html-reset').catch(err => {
       console.error('[sw] register failed', err);
     });
   });

@@ -32,6 +32,17 @@ function summarizeError(error) {
   return String(error);
 }
 
+function summarizeMediaError(mediaError) {
+  if (!mediaError) return 'unknown';
+  const codeMap = {
+    1: 'MEDIA_ERR_ABORTED',
+    2: 'MEDIA_ERR_NETWORK',
+    3: 'MEDIA_ERR_DECODE',
+    4: 'MEDIA_ERR_SRC_NOT_SUPPORTED'
+  };
+  return `${codeMap[mediaError.code] || 'MEDIA_ERR_UNKNOWN'}(${mediaError.code || 'n/a'})`;
+}
+
 function shouldFallbackToHtmlAudio(error) {
   const message = summarizeError(error).toLowerCase();
   return (
@@ -305,7 +316,10 @@ function ensureHtmlAudio() {
   htmlAudio.preload = 'auto';
   htmlAudio.volume = volume;
   htmlAudio.playsInline = true;
-  htmlAudio.crossOrigin = 'anonymous';
+  htmlAudio.addEventListener('loadstart', () => {
+    pushDebugLog('html.loadstart', `readyState=${htmlAudio.readyState} networkState=${htmlAudio.networkState}`);
+    emitDebug();
+  });
   htmlAudio.addEventListener('loadedmetadata', () => {
     pushDebugLog('html.loadedmetadata', `duration=${Number.isFinite(htmlAudio.duration) ? htmlAudio.duration.toFixed(2) : 'unknown'}`);
     emitDebug();
@@ -334,6 +348,14 @@ function ensureHtmlAudio() {
     pushDebugLog('html.suspend', `readyState=${htmlAudio.readyState} networkState=${htmlAudio.networkState}`);
     emitDebug();
   });
+  htmlAudio.addEventListener('abort', () => {
+    pushDebugLog('html.abort', `readyState=${htmlAudio.readyState} networkState=${htmlAudio.networkState}`);
+    emitDebug();
+  });
+  htmlAudio.addEventListener('emptied', () => {
+    pushDebugLog('html.emptied', `readyState=${htmlAudio.readyState} networkState=${htmlAudio.networkState}`);
+    emitDebug();
+  });
   htmlAudio.addEventListener('playing', () => {
     pushDebugLog('html.playing');
     setPlaybackState('playing');
@@ -352,7 +374,10 @@ function ensureHtmlAudio() {
     emitDebug();
   });
   htmlAudio.addEventListener('error', () => {
-    pushDebugLog('html.error');
+    pushDebugLog(
+      'html.error',
+      `${summarizeMediaError(htmlAudio.error)} readyState=${htmlAudio.readyState} networkState=${htmlAudio.networkState}`
+    );
     if (shouldBePlaying) setPlaybackState('paused');
     emitDebug();
   });
@@ -372,6 +397,10 @@ async function playViaHtmlAudio() {
   const audio = ensureHtmlAudio();
   const nextSrc = resolveSourceUrl();
   if (audio.src !== nextSrc) {
+    audio.pause();
+    audio.removeAttribute('src');
+    audio.load();
+    pushDebugLog('html.reset');
     audio.src = nextSrc;
     pushDebugLog('html.src.set', nextSrc);
     audio.load();
