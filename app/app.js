@@ -2619,7 +2619,7 @@ if (summaryRating) {
     const index = Number(target.dataset.star);
     summaryRatingValue = index - 0.5;
     renderSummaryRating();
-    scheduleSummarySave();
+    void saveSummaryNow();
   });
   summaryRating.addEventListener('dblclick', event => {
     const target = event.target.closest('.star');
@@ -2627,7 +2627,7 @@ if (summaryRating) {
     const index = Number(target.dataset.star);
     summaryRatingValue = index;
     renderSummaryRating();
-    scheduleSummarySave();
+    void saveSummaryNow();
   });
 }
 
@@ -3932,7 +3932,9 @@ if (syncClearBtn) {
       setSyncStatus('正在清空数据...');
       if (syncReady) {
         appendClearDataLog('开始清空云端数据');
-        const cleared = await clearAllRemoteData();
+        const cleared = await clearAllRemoteData(message => {
+          appendClearDataLog(message);
+        });
         if (!cleared) {
           appendClearDataLog('云端清空失败：同步未初始化');
           setSyncStatus('清空失败：同步未初始化');
@@ -3970,7 +3972,7 @@ if (syncClearBtn) {
         appendClearDataLog('清理 sessionStorage 失败：jztodo.sw.cleaned');
       }
 
-      appendClearDataLog('清空完成，准备刷新页面');
+      appendClearDataLog('清空完成，准备自动刷新页面');
       setSyncStatus('数据已清空，正在刷新...');
       window.location.reload();
     } catch (err) {

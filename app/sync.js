@@ -349,16 +349,20 @@ export async function pullNow() {
   }
 }
 
-export async function clearAllRemoteData() {
+export async function clearAllRemoteData(onLog = null) {
   if (!supabase) {
     supabase = await getSupabase();
   }
   if (!supabase) return false;
 
+  const log = typeof onLog === 'function' ? onLog : () => {};
+
   const clearTableByPrimaryKey = async (table, keyColumn) => {
     const CHUNK_SIZE = 200;
+    log(`开始处理云端表：${table}`);
 
     while (true) {
+      log(`读取 ${table} 的一批主键`);
       const { data, error } = await supabase
         .from(table)
         .select(keyColumn)
@@ -371,8 +375,12 @@ export async function clearAllRemoteData() {
       const ids = Array.isArray(data)
         ? data.map(row => row && row[keyColumn]).filter(Boolean)
         : [];
-      if (!ids.length) break;
+      if (!ids.length) {
+        log(`${table} 已无可删除数据`);
+        break;
+      }
 
+      log(`删除 ${table} 当前批次 ${ids.length} 条`);
       const { error: deleteError } = await supabase
         .from(table)
         .delete()
@@ -382,6 +390,8 @@ export async function clearAllRemoteData() {
         throw deleteError;
       }
     }
+
+    log(`云端表 ${table} 清空完成`);
   };
 
   await clearTableByPrimaryKey('todos', 'uuid');
