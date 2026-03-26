@@ -134,6 +134,8 @@ const bgmCloseBtn = document.getElementById('bgm-close');
 const bgmCurrentName = document.getElementById('bgm-current-name');
 const bgmVolume = document.getElementById('bgm-volume');
 const alarmVolume = document.getElementById('alarm-volume');
+const bgmLogOutput = document.getElementById('bgm-log-output');
+const bgmLogCopyBtn = document.getElementById('bgm-log-copy');
 const regretCoinBalanceEl = document.getElementById('regret-coin-balance');
 const regretCoinStatusEl = document.getElementById('regret-coin-status');
 const regretCoinSpendInput = document.getElementById('regret-coin-spend-input');
@@ -2698,6 +2700,8 @@ let changeSyncQueued = false;
 restoreInProgressPromise = restoreInProgressTodos();
 ensureRunningTicker();
 
+let latestBgmDebugSnapshot = null;
+
 function renderBgmStatus(state) {
   if (!bgmStatusEl) return;
   const labels = {
@@ -2707,6 +2711,31 @@ function renderBgmStatus(state) {
     playing: '播放中'
   };
   bgmStatusEl.textContent = `BGM：${labels[state] || '未播放'}`;
+}
+
+function renderBgmDebug(snapshot) {
+  latestBgmDebugSnapshot = snapshot;
+  if (!bgmLogOutput) return;
+  const lines = [];
+  if (snapshot) {
+    lines.push(`播放状态：${snapshot.playbackState || 'unknown'}`);
+    lines.push(`播放模式：${snapshot.mode || 'unknown'}`);
+    lines.push(`当前来源：${snapshot.source?.label || ''}`);
+    lines.push(`交互解锁：${snapshot.userInteracted ? '是' : '否'}`);
+    lines.push(`音量：${Math.round((snapshot.volume || 0) * 100)}%`);
+    lines.push('');
+    lines.push('日志：');
+    const logs = Array.isArray(snapshot.logs) ? snapshot.logs : [];
+    if (logs.length) {
+      lines.push(...logs);
+    } else {
+      lines.push('暂无音频资源日志');
+    }
+  } else {
+    lines.push('暂无音频资源日志');
+  }
+  bgmLogOutput.textContent = lines.join('\n');
+  bgmLogOutput.scrollTop = bgmLogOutput.scrollHeight;
 }
 
 function triggerChangeSync() {
@@ -3941,6 +3970,7 @@ window.addEventListener('online', () => {
 
 if (bgmToggleBtn) {
   bgmToggleBtn.addEventListener('click', () => {
+    renderBgmDebug(latestBgmDebugSnapshot);
     if (bgmModal) bgmModal.classList.remove('hidden');
   });
 }
@@ -3954,6 +3984,23 @@ if (bgmCloseBtn) {
 if (bgmModal) {
   bgmModal.addEventListener('click', event => {
     if (event.target === bgmModal) bgmModal.classList.add('hidden');
+  });
+}
+
+bgm.subscribeDebug(snapshot => {
+  renderBgmDebug(snapshot);
+});
+
+if (bgmLogCopyBtn) {
+  bgmLogCopyBtn.addEventListener('click', async () => {
+    const text = bgmLogOutput ? bgmLogOutput.textContent || '' : '';
+    if (!text) return;
+    try {
+      await navigator.clipboard.writeText(text);
+      setTimerStatus('音频资源日志已复制');
+    } catch (error) {
+      setTimerStatus(`复制失败：${summarizeAppError(error)}`);
+    }
   });
 }
 

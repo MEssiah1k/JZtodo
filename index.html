@@ -28,7 +28,7 @@
     }
   </style>
   <link rel="manifest" href="app/manifest.json?v=20260325-pwa-restore" />
-  <link rel="stylesheet" href="style.light.css?v=20260325-mobile-heatmap-scroll-nav" />
+  <link rel="stylesheet" href="style.light.css?v=20260326-bgm-log-ui-fix" />
 </head>
 <body>
   <button id="bgm-toggle" class="bgm-toggle" type="button" aria-label="BGM 设置">♪</button>
@@ -256,11 +256,11 @@
     </div>
   </section>
 
-  <script type="module" src="app/app.js?v=20260325-pwa-restore"></script>
+  <script type="module" src="app/app.js?v=20260326-bgm-log-ui-fix"></script>
   </div>
 
   <div id="bgm-modal" class="modal-overlay hidden" role="dialog" aria-modal="true">
-    <div class="modal-card">
+    <div class="modal-card bgm-modal-card">
       <div class="modal-header">
         <h3>BGM 设置</h3>
         <button id="bgm-close" type="button" class="modal-close">关闭</button>
@@ -278,6 +278,13 @@
       <div class="bgm-volume">
         <label for="alarm-volume">铃声音量</label>
         <input id="alarm-volume" type="range" min="0" max="100" value="15" />
+      </div>
+      <div class="bgm-debug">
+        <div class="bgm-debug-header">
+          <span class="bgm-label">音频资源日志</span>
+          <button id="bgm-log-copy" type="button" class="progress-btn bgm-log-copy">复制日志</button>
+        </div>
+        <pre id="bgm-log-output" class="bgm-log-output">暂无音频资源日志</pre>
       </div>
     </div>
   </div>

@@ -1198,6 +1198,10 @@ section {
   margin-bottom: 10px;
 }
 
+.bgm-modal-card {
+  overflow: auto;
+}
+
 .bgm-picker {
   display: flex;
   align-items: center;
@@ -1209,6 +1213,48 @@ section {
   align-items: center;
   gap: 10px;
   margin-top: 12px;
+}
+
+.bgm-debug {
+  margin-top: 14px;
+  display: block;
+}
+
+.bgm-debug-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.bgm-log-output {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  margin: 10px 0 0;
+  padding: 12px;
+  min-height: 140px;
+  max-height: min(36vh, 320px);
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: #fffaf6;
+  color: var(--text);
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.progress-btn.bgm-log-copy {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 1;
+  pointer-events: auto;
+  min-width: 88px;
+  padding: 8px 14px;
+  border-radius: 8px;
 }
 
 .bgm-volume label {
