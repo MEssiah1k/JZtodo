@@ -17,7 +17,7 @@ import {
   getTodosByRuleId,
   clearLocalDatabase
 } from './db.js';
-import * as bgm from './bgm.js?v=20260326-bgm-reload-fix';
+import * as bgm from './bgm.js?v=20260326-bgm-local-m4a';
 import {
   initSync,
   syncNow,
@@ -2737,6 +2737,7 @@ function renderBgmDebug(snapshot) {
     lines.push(`资源类型：${sourceType === 'file' ? '本地文件' : '远程地址'}`);
     lines.push(`资源名称：${resourceName}`);
     lines.push(`默认资源：${usingDefaultSource ? '是' : '否'}`);
+    lines.push(`本地缓存：${activeMediaUrl.startsWith('blob:') ? '是' : '否'}`);
     lines.push(`配置地址：${configuredValue || '无'}`);
     lines.push(`实际媒体地址：${activeMediaUrl || '无'}`);
     lines.push(`交互解锁：${snapshot.userInteracted ? '是' : '否'}`);
@@ -4194,7 +4195,7 @@ restoreAlarmVolume();
 
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
-    navigator.serviceWorker.register('./sw.js?v=20260326-bgm-reload-fix').catch(err => {
+    navigator.serviceWorker.register('./sw.js?v=20260326-bgm-local-m4a').catch(err => {
       console.error('[sw] register failed', err);
     });
   });

@@ -1,4 +1,7 @@
-const DEFAULT_BGM_SRC = new URL('../assets/bgm/pinknoise_mobile.mp3', import.meta.url).href;
+import { getMeta, setMeta } from './db.js';
+
+const DEFAULT_BGM_SRC = new URL('../assets/bgm/pinknoise_faststart.m4a', import.meta.url).href;
+const DEFAULT_BGM_CACHE_KEY = 'bgm.defaultAudioCache.v2';
 const DEBUG_LOG_LIMIT = 50;
 const FETCH_TIMEOUT_MS = 10000;
 const READ_BODY_TIMEOUT_MS = 12000;
@@ -18,6 +21,8 @@ let inflightPlayPromise = null;
 let forceHtmlAudioFallback = false;
 let interactionLogCount = 0;
 let preferHtmlAudio = false;
+let defaultCachedBlobUrl = '';
+let defaultCacheInFlight = null;
 
 const stateListeners = new Set();
 const debugListeners = new Set();
@@ -128,6 +133,86 @@ function emitDebug() {
       // ignore
     }
   });
+}
+
+function isUsingDefaultRemoteSource() {
+  return (
+    sourceConfig.type === 'url' &&
+    sourceConfig.label === 'default' &&
+    sourceConfig.value === DEFAULT_BGM_SRC
+  );
+}
+
+function setDefaultCachedBlobUrl(blob, origin = 'cache') {
+  if (!(blob instanceof Blob)) return '';
+  if (defaultCachedBlobUrl) {
+    try {
+      URL.revokeObjectURL(defaultCachedBlobUrl);
+    } catch (err) {
+      // ignore
+    }
+  }
+  defaultCachedBlobUrl = URL.createObjectURL(blob);
+  pushDebugLog('default.cache.blob.ready', `${origin} ${blob.size || 0} bytes`);
+  return defaultCachedBlobUrl;
+}
+
+async function ensureDefaultAudioCached() {
+  if (!isUsingDefaultRemoteSource()) return sourceConfig.value;
+  if (defaultCachedBlobUrl) {
+    pushDebugLog('default.cache.hit', 'memory');
+    return defaultCachedBlobUrl;
+  }
+  if (defaultCacheInFlight) {
+    pushDebugLog('default.cache.wait', 'inflight');
+    return defaultCacheInFlight;
+  }
+
+  defaultCacheInFlight = (async () => {
+    try {
+      const cachedRecord = await getMeta(DEFAULT_BGM_CACHE_KEY);
+      const cachedValue = cachedRecord?.value;
+      if (
+        cachedValue &&
+        cachedValue.src === DEFAULT_BGM_SRC &&
+        cachedValue.blob instanceof Blob
+      ) {
+        pushDebugLog('default.cache.hit', 'indexeddb');
+        return setDefaultCachedBlobUrl(cachedValue.blob, 'indexeddb');
+      }
+
+      pushDebugLog('default.cache.miss', DEFAULT_BGM_SRC);
+      pushDebugLog('default.cache.fetch.start', DEFAULT_BGM_SRC);
+      const response = await fetch(DEFAULT_BGM_SRC, { cache: 'no-store' });
+      pushDebugLog('default.cache.fetch.done', `ok=${response.ok} status=${response.status}`);
+      if (!response.ok) {
+        throw new Error(`默认音频下载失败: ${response.status}`);
+      }
+      const blob = await response.blob();
+      pushDebugLog('default.cache.blob.done', `${blob.size} bytes ${blob.type || 'unknown'}`);
+      try {
+        await setMeta(DEFAULT_BGM_CACHE_KEY, {
+          src: DEFAULT_BGM_SRC,
+          blob,
+          size: blob.size,
+          type: blob.type || '',
+          cachedAt: new Date().toISOString()
+        });
+        pushDebugLog('default.cache.store.done', `${blob.size} bytes`);
+      } catch (storeError) {
+        pushDebugLog('default.cache.store.failed', summarizeError(storeError));
+      }
+      return setDefaultCachedBlobUrl(blob, 'download');
+    } catch (error) {
+      pushDebugLog('default.cache.failed', summarizeError(error));
+      return sourceConfig.value;
+    } finally {
+      defaultCacheInFlight = null;
+      emitDebug();
+    }
+  })();
+
+  return defaultCacheInFlight;
 }
 
 function ensureAudioContext() {
@@ -384,18 +469,21 @@ function ensureHtmlAudio() {
   return htmlAudio;
 }
 
-function resolveSourceUrl() {
+async function resolveSourceUrl() {
   if (sourceConfig.type === 'file') {
     const file = sourceConfig.value;
     if (!file) throw new Error('未选择本地音频文件');
     return URL.createObjectURL(file);
+  }
+  if (isUsingDefaultRemoteSource()) {
+    return ensureDefaultAudioCached();
   }
   return sourceConfig.value;
 }
 
 async function playViaHtmlAudio() {
   const audio = ensureHtmlAudio();
-  const nextSrc = resolveSourceUrl();
+  const nextSrc = await resolveSourceUrl();
   if (audio.src !== nextSrc) {
     audio.pause();
     audio.removeAttribute('src');
@@ -440,6 +528,7 @@ export function init() {
   preferHtmlAudio = detectMobileDevice();
   if (preferHtmlAudio) {
     pushDebugLog('playback.strategy', 'mobile-html-audio');
+    void ensureDefaultAudioCached();
   }
   emitState();
   if (window.__jzTodoBgmInitBound) return;
