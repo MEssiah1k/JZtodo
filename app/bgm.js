@@ -1,6 +1,7 @@
 const DEFAULT_BGM_SRC = new URL('../assets/bgm/pinknoise.m4a', import.meta.url).href;
 const DEBUG_LOG_LIMIT = 50;
 const FETCH_TIMEOUT_MS = 10000;
+const READ_BODY_TIMEOUT_MS = 12000;
 const DECODE_TIMEOUT_MS = 8000;
 
 let audioContext = null;
@@ -170,7 +171,17 @@ async function readSourceArrayBuffer() {
     if (!response.ok) {
       throw new Error(`音频请求失败: ${response.status}`);
     }
-    return response.arrayBuffer();
+    pushDebugLog('source.body.read.start');
+    const arrayBuffer = await Promise.race([
+      response.arrayBuffer(),
+      new Promise((_, reject) => {
+        setTimeout(() => {
+          reject(new Error(`音频响应体读取超时（${READ_BODY_TIMEOUT_MS}ms）`));
+        }, READ_BODY_TIMEOUT_MS);
+      })
+    ]);
+    pushDebugLog('source.body.read.done', `${arrayBuffer.byteLength} bytes`);
+    return arrayBuffer;
   } catch (error) {
     pushDebugLog('source.fetch.failed', summarizeError(error));
     throw error;
