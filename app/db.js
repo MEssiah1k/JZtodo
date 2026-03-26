@@ -85,23 +85,22 @@ export function openDB() {
 }
 
 export function clearLocalDatabase() {
-  return new Promise((resolve, reject) => {
-    const closeRequest = indexedDB.open(DB_NAME, DB_VERSION);
-
-    closeRequest.onsuccess = () => {
-      closeRequest.result.close();
-      const deleteRequest = indexedDB.deleteDatabase(DB_NAME);
-      deleteRequest.onsuccess = () => resolve(true);
-      deleteRequest.onerror = () => reject(deleteRequest.error);
-      deleteRequest.onblocked = () => reject(new Error('数据库被占用，无法清空'));
-    };
-
-    closeRequest.onerror = () => {
-      const deleteRequest = indexedDB.deleteDatabase(DB_NAME);
-      deleteRequest.onsuccess = () => resolve(true);
-      deleteRequest.onerror = () => reject(deleteRequest.error);
-      deleteRequest.onblocked = () => reject(new Error('数据库被占用，无法清空'));
-    };
+  return new Promise(async (resolve, reject) => {
+    try {
+      const db = await openDB();
+      const storeNames = [STORE_NAME, SUMMARY_STORE, META_STORE, RECURRENCE_STORE];
+      const tx = db.transaction(storeNames, 'readwrite');
+      tx.onerror = () => reject(tx.error || new Error('本地数据库清空失败'));
+      tx.oncomplete = () => {
+        db.close();
+        resolve(true);
+      };
+      storeNames.forEach(name => {
+        tx.objectStore(name).clear();
+      });
+    } catch (error) {
+      reject(error);
+    }
   });
 }
 
