@@ -17,7 +17,7 @@ import {
   getTodosByRuleId,
   clearLocalDatabase
 } from './db.js';
-import * as bgm from './bgm.js?v=20260326-bgm-downloading-state';
+import * as bgm from './bgm.js?v=20260326-bgm-downloading-lock';
 import {
   initSync,
   syncNow,
@@ -3768,6 +3768,7 @@ if (timerMinutesInput) {
 
 if (timerToggleBtn) {
   timerToggleBtn.addEventListener('click', () => {
+    if (currentBgmPlaybackState === 'downloading') return;
     if (timerRunning) pauseTimer();
     else startTimer();
   });
@@ -4202,7 +4203,7 @@ restoreAlarmVolume();
 
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
-    navigator.serviceWorker.register('./sw.js?v=20260326-bgm-downloading-state').catch(err => {
+    navigator.serviceWorker.register('./sw.js?v=20260326-bgm-downloading-lock').catch(err => {
       console.error('[sw] register failed', err);
     });
   });
