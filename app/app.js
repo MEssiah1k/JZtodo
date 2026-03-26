@@ -17,7 +17,7 @@ import {
   getTodosByRuleId,
   clearLocalDatabase
 } from './db.js';
-import * as bgm from './bgm.js?v=20260326-bgm-file-picker';
+import * as bgm from './bgm.js?v=20260326-bgm-remote-revert';
 import {
   initSync,
   syncNow,
@@ -32,7 +32,7 @@ import {
   insertRemoteKvIfAbsent
 } from './sync.js';
 
-const APP_BUILD_VERSION = '20260326-bgm-file-picker';
+const APP_BUILD_VERSION = '20260326-bgm-remote-revert';
 
 const input = document.getElementById('todo-input');
 const todoCategory = document.getElementById('todo-category');
@@ -2711,7 +2711,6 @@ function renderBgmStatus(state) {
   const labels = {
     stopped: '未播放',
     paused: '已暂停',
-    downloading: '下载中',
     loading: '准备播放中',
     playing: '播放中'
   };
@@ -2739,32 +2738,6 @@ function renderBgmDebug(snapshot) {
       : sourceType === 'file'
         ? '本地文件'
         : 'unknown';
-    const lastProgressLine = [...logs].reverse().find(line => line.includes('default.cache.blob.progress')) || '';
-    const lastProgressValue = lastProgressLine.includes(' | ')
-      ? lastProgressLine.split(' | ').slice(1).join(' | ')
-      : '无';
-    let cacheStage = '未开始';
-    let cacheStoreState = '未开始';
-    if (logs.some(line => line.includes('default.cache.failed'))) {
-      cacheStage = '失败';
-    } else if (logs.some(line => line.includes('default.cache.blob.ready'))) {
-      cacheStage = '已就绪';
-    } else if (logs.some(line => line.includes('default.cache.store.start'))) {
-      cacheStage = '写入本地缓存中';
-    } else if (logs.some(line => line.includes('default.cache.blob.start'))) {
-      cacheStage = '下载中';
-    } else if (logs.some(line => line.includes('default.cache.hit'))) {
-      cacheStage = '已命中缓存';
-    }
-
-    if (logs.some(line => line.includes('default.cache.store.failed'))) {
-      cacheStoreState = '失败';
-    } else if (logs.some(line => line.includes('default.cache.store.done'))) {
-      cacheStoreState = '完成';
-    } else if (logs.some(line => line.includes('default.cache.store.start'))) {
-      cacheStoreState = '进行中';
-    }
-
     lines.push(`版本号：${APP_BUILD_VERSION}`);
     lines.push(`播放状态：${snapshot.playbackState || 'unknown'}`);
     lines.push(`播放模式：${snapshot.mode || 'unknown'}`);
@@ -2772,15 +2745,11 @@ function renderBgmDebug(snapshot) {
     lines.push(`资源类型：${sourceType === 'file' ? '本地文件' : '远程地址'}`);
     lines.push(`资源名称：${resourceName}`);
     lines.push(`默认资源：${usingDefaultSource ? '是' : '否'}`);
-    lines.push(`本地缓存：${activeMediaUrl.startsWith('blob:') ? '是' : '否'}`);
     lines.push(`配置地址：${configuredValue || '无'}`);
     lines.push(`实际媒体地址：${activeMediaUrl || '无'}`);
     lines.push(`交互解锁：${snapshot.userInteracted ? '是' : '否'}`);
     lines.push(`音量：${Math.round((snapshot.volume || 0) * 100)}%`);
     lines.push(`HTMLAudio状态：readyState=${htmlReadyState} networkState=${htmlNetworkState}`);
-    lines.push(`缓存阶段：${cacheStage}`);
-    lines.push(`下载进度：${lastProgressValue}`);
-    lines.push(`写入缓存：${cacheStoreState}`);
     lines.push('');
     lines.push('日志：');
     if (logs.length) {
@@ -4234,7 +4203,7 @@ restoreAlarmVolume();
 
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
-    navigator.serviceWorker.register('./sw.js?v=20260326-bgm-file-picker').catch(err => {
+    navigator.serviceWorker.register('./sw.js?v=20260326-bgm-remote-revert').catch(err => {
       console.error('[sw] register failed', err);
     });
   });

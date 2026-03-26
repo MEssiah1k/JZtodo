@@ -256,7 +256,7 @@
     </div>
   </section>
 
-  <script type="module" src="app/app.js?v=20260326-bgm-file-picker" ></script>
+  <script type="module" src="app/app.js?v=20260326-bgm-remote-revert" ></script>
   </div>
 
   <div id="bgm-modal" class="modal-overlay hidden" role="dialog" aria-modal="true">
@@ -269,9 +269,8 @@
         当前音乐：<span id="bgm-current-name">pinknoise</span>
       </div>
       <div class="bgm-picker">
-        <input id="bgm-file" type="file" accept=".mp3,.m4a,.aac,.wav,.ogg,.flac,.mp4,.m4v,.mov,.webm,audio/*,video/*" />
+        <input id="bgm-file" type="file" accept="audio/*" />
       </div>
-      <div class="bgm-status">优先选择 mp3 / m4a。本地文件入口由手机系统决定，必要时从文件管理器分享或打开到浏览器。</div>
       <div class="bgm-volume">
         <label for="bgm-volume">音量</label>
         <input id="bgm-volume" type="range" min="0" max="100" value="60" />

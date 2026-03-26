@@ -1,17 +1,13 @@
-const DEFAULT_BGM_SRC = new URL('../assets/bgm/pinknoise_faststart.m4a', import.meta.url).href;
-const DEFAULT_BGM_CACHE_NAME = 'jztodo-default-bgm-cache-v1';
+const DEFAULT_BGM_SRC = new URL('../assets/bgm/pinknoise_mobile.mp3', import.meta.url).href;
 const DEBUG_LOG_LIMIT = 50;
 const FETCH_TIMEOUT_MS = 10000;
 const READ_BODY_TIMEOUT_MS = 12000;
 const DECODE_TIMEOUT_MS = 8000;
-const DEFAULT_CACHE_BLOB_TIMEOUT_MS = 600000;
-const DEFAULT_CACHE_STORE_TIMEOUT_MS = 15000;
 
 let audioContext = null;
 let currentSourceNode = null;
 let currentGainNode = null;
 let htmlAudio = null;
-let htmlMediaKind = 'audio';
 let userInteracted = false;
 let shouldBePlaying = false;
 let volume = 0.6;
@@ -22,8 +18,6 @@ let inflightPlayPromise = null;
 let forceHtmlAudioFallback = false;
 let interactionLogCount = 0;
 let preferHtmlAudio = false;
-let defaultCachedBlobUrl = '';
-let defaultCacheInFlight = null;
 
 const stateListeners = new Set();
 const debugListeners = new Set();
@@ -134,223 +128,6 @@ function emitDebug() {
       // ignore
     }
   });
-}
-
-function formatBytes(bytes) {
-  if (!Number.isFinite(bytes) || bytes <= 0) return '0B';
-  const units = ['B', 'KB', 'MB', 'GB'];
-  let value = bytes;
-  let unitIndex = 0;
-  while (value >= 1024 && unitIndex < units.length - 1) {
-    value /= 1024;
-    unitIndex += 1;
-  }
-  const digits = unitIndex === 0 ? 0 : value >= 100 ? 0 : value >= 10 ? 1 : 2;
-  return `${value.toFixed(digits)}${units[unitIndex]}`;
-}
-
-async function readResponseBlobWithProgress(response) {
-  const totalBytesHeader = Number(response.headers.get('content-length') || 0);
-  const totalBytes = Number.isFinite(totalBytesHeader) && totalBytesHeader > 0
-    ? totalBytesHeader
-    : 0;
-  const startedAt = Date.now();
-  let loadedBytes = 0;
-  let progressTimerId = null;
-
-  const logProgress = () => {
-    const elapsedSec = Math.max(0, Math.floor((Date.now() - startedAt) / 1000));
-    if (totalBytes > 0) {
-      const percent = ((loadedBytes / totalBytes) * 100).toFixed(1);
-      pushDebugLog(
-        'default.cache.blob.progress',
-        `${elapsedSec}s ${formatBytes(loadedBytes)}/${formatBytes(totalBytes)} ${percent}%`
-      );
-    } else {
-      pushDebugLog(
-        'default.cache.blob.progress',
-        `${elapsedSec}s ${formatBytes(loadedBytes)}`
-      );
-    }
-  };
-
-  try {
-    progressTimerId = window.setInterval(logProgress, 1000);
-    if (!response.body || typeof response.body.getReader !== 'function') {
-      const blob = await response.blob();
-      loadedBytes = blob.size || loadedBytes;
-      logProgress();
-      return blob;
-    }
-
-    const reader = response.body.getReader();
-    const chunks = [];
-
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      if (value) {
-        chunks.push(value);
-        loadedBytes += value.byteLength;
-      }
-    }
-
-    logProgress();
-    return new Blob(chunks, {
-      type: response.headers.get('content-type') || 'application/octet-stream'
-    });
-  } finally {
-    if (progressTimerId !== null) {
-      window.clearInterval(progressTimerId);
-    }
-  }
-}
-
-function isUsingDefaultRemoteSource() {
-  return (
-    sourceConfig.type === 'url' &&
-    sourceConfig.label === 'default' &&
-    sourceConfig.value === DEFAULT_BGM_SRC
-  );
-}
-
-function setDefaultCachedBlobUrl(blob, origin = 'cache') {
-  if (!(blob instanceof Blob)) return '';
-  if (defaultCachedBlobUrl) {
-    try {
-      URL.revokeObjectURL(defaultCachedBlobUrl);
-    } catch (err) {
-      // ignore
-    }
-  }
-  defaultCachedBlobUrl = URL.createObjectURL(blob);
-  pushDebugLog('default.cache.blob.ready', `${origin} ${blob.size || 0} bytes`);
-  return defaultCachedBlobUrl;
-}
-
-function downloadDefaultAudioBlobWithProgress(url) {
-  return new Promise((resolve, reject) => {
-    const xhr = new XMLHttpRequest();
-    const startedAt = Date.now();
-    let lastProgressLogAt = 0;
-
-    const logProgress = (loaded, total) => {
-      const now = Date.now();
-      if (now - lastProgressLogAt < 1000) return;
-      lastProgressLogAt = now;
-      const elapsedSec = Math.max(0, Math.floor((now - startedAt) / 1000));
-      if (Number.isFinite(total) && total > 0) {
-        const percent = ((loaded / total) * 100).toFixed(1);
-        pushDebugLog(
-          'default.cache.blob.progress',
-          `${elapsedSec}s ${formatBytes(loaded)}/${formatBytes(total)} ${percent}%`
-        );
-      } else {
-        pushDebugLog('default.cache.blob.progress', `${elapsedSec}s ${formatBytes(loaded)}`);
-      }
-    };
-
-    xhr.open('GET', url, true);
-    xhr.responseType = 'blob';
-    xhr.timeout = DEFAULT_CACHE_BLOB_TIMEOUT_MS;
-
-    xhr.onloadstart = () => {
-      pushDebugLog('default.cache.blob.start');
-    };
-
-    xhr.onprogress = event => {
-      logProgress(event.loaded || 0, event.lengthComputable ? event.total : 0);
-    };
-
-    xhr.onload = () => {
-      const status = xhr.status || 0;
-      if (status >= 200 && status < 300 && xhr.response instanceof Blob) {
-        logProgress(xhr.response.size || 0, xhr.response.size || 0);
-        resolve(xhr.response);
-        return;
-      }
-      reject(new Error(`default.cache.blob.http ${status}`));
-    };
-
-    xhr.onerror = () => reject(new Error('default.cache.blob.network'));
-    xhr.onabort = () => reject(new Error('default.cache.blob.abort'));
-    xhr.ontimeout = () => reject(new Error(`default.cache.blob.timeout ${DEFAULT_CACHE_BLOB_TIMEOUT_MS}ms`));
-    xhr.send();
-  });
-}
-
-async function ensureDefaultAudioCached() {
-  if (!isUsingDefaultRemoteSource()) return sourceConfig.value;
-  if (defaultCachedBlobUrl) {
-    pushDebugLog('default.cache.hit', 'memory');
-    return defaultCachedBlobUrl;
-  }
-  if (defaultCacheInFlight) {
-    pushDebugLog('default.cache.wait', 'inflight');
-    if (playbackState !== 'playing') {
-      setPlaybackState('downloading');
-    }
-    return defaultCacheInFlight;
-  }
-
-  defaultCacheInFlight = (async () => {
-    try {
-      if (!('caches' in window)) {
-        pushDebugLog('default.cache.unsupported', 'cache-storage');
-        return sourceConfig.value;
-      }
-
-      const cache = await caches.open(DEFAULT_BGM_CACHE_NAME);
-      const cachedResponse = await cache.match(DEFAULT_BGM_SRC);
-      if (cachedResponse) {
-        pushDebugLog('default.cache.hit', 'cache-storage');
-        pushDebugLog('default.cache.blob.start', 'cache-storage');
-        const cachedBlob = await cachedResponse.blob();
-        pushDebugLog('default.cache.blob.done', `${cachedBlob.size} bytes ${cachedBlob.type || 'unknown'}`);
-        return setDefaultCachedBlobUrl(cachedBlob, 'cache-storage');
-      }
-
-      pushDebugLog('default.cache.miss', DEFAULT_BGM_SRC);
-      if (playbackState !== 'playing') {
-        setPlaybackState('downloading');
-      }
-      pushDebugLog('default.cache.fetch.start', DEFAULT_BGM_SRC);
-      const blob = await downloadDefaultAudioBlobWithProgress(DEFAULT_BGM_SRC);
-      pushDebugLog('default.cache.fetch.done', `ok=true status=200`);
-      pushDebugLog('default.cache.blob.done', `${blob.size} bytes ${blob.type || 'unknown'}`);
-      try {
-        pushDebugLog('default.cache.store.start', `${blob.size} bytes`);
-        await Promise.race([
-          cache.put(
-            DEFAULT_BGM_SRC,
-            new Response(blob, {
-              headers: {
-                'content-type': blob.type || 'application/octet-stream',
-                'content-length': String(blob.size || 0)
-              }
-            })
-          ),
-          new Promise((_, reject) => {
-            setTimeout(() => {
-              reject(new Error(`default.cache.store.timeout ${DEFAULT_CACHE_STORE_TIMEOUT_MS}ms`));
-            }, DEFAULT_CACHE_STORE_TIMEOUT_MS);
-          })
-        ]);
-        pushDebugLog('default.cache.store.done', `${blob.size} bytes`);
-      } catch (storeError) {
-        pushDebugLog('default.cache.store.failed', summarizeError(storeError));
-      }
-      return setDefaultCachedBlobUrl(blob, 'download');
-    } catch (error) {
-      pushDebugLog('default.cache.failed', summarizeError(error));
-      return sourceConfig.value;
-    } finally {
-      defaultCacheInFlight = null;
-      emitDebug();
-    }
-  })();
-
-  return defaultCacheInFlight;
 }
 
 function ensureAudioContext() {
@@ -478,7 +255,6 @@ function decodeArrayBuffer(context, arrayBuffer) {
     };
 
     try {
-      // 回调式 decodeAudioData 在部分移动浏览器上比 Promise 版稳定。
       const maybePromise = context.decodeAudioData(
         arrayBuffer.slice(0),
         audioBuffer => {
@@ -512,7 +288,7 @@ function stopCurrentPlayback() {
     try {
       currentSourceNode.stop();
     } catch (err) {
-      // ignore repeated stop
+      // ignore
     }
     currentSourceNode.disconnect();
     currentSourceNode = null;
@@ -532,49 +308,13 @@ function stopCurrentPlayback() {
   emitDebug();
 }
 
-function isVideoLikeFileSource() {
-  if (sourceConfig.type !== 'file') return false;
-  const file = sourceConfig.value;
-  if (!file) return false;
-  const fileType = String(file.type || '').toLowerCase();
-  const fileName = String(file.name || '').toLowerCase();
-  return (
-    fileType.startsWith('video/') ||
-    /\.(mp4|m4v|mov|webm)$/i.test(fileName)
-  );
-}
-
-function destroyHtmlMediaElement() {
-  if (!htmlAudio) return;
-  htmlAudio.pause();
-  htmlAudio.removeAttribute('src');
-  htmlAudio.load();
-  if (htmlMediaKind === 'video' && htmlAudio.parentNode) {
-    htmlAudio.parentNode.removeChild(htmlAudio);
-  }
-  htmlAudio = null;
-}
-
 function ensureHtmlAudio() {
-  const nextKind = isVideoLikeFileSource() ? 'video' : 'audio';
-  if (htmlAudio && htmlMediaKind === nextKind) return htmlAudio;
-  destroyHtmlMediaElement();
-  htmlMediaKind = nextKind;
-  htmlAudio = nextKind === 'video' ? document.createElement('video') : new Audio();
+  if (htmlAudio) return htmlAudio;
+  htmlAudio = new Audio();
   htmlAudio.loop = true;
   htmlAudio.preload = 'auto';
   htmlAudio.volume = volume;
   htmlAudio.playsInline = true;
-  htmlAudio.setAttribute('playsinline', 'true');
-  htmlAudio.setAttribute('webkit-playsinline', 'true');
-  if (nextKind === 'video') {
-    htmlAudio.controls = false;
-    htmlAudio.muted = false;
-    htmlAudio.style.display = 'none';
-    htmlAudio.disablePictureInPicture = true;
-    document.body.appendChild(htmlAudio);
-  }
-  pushDebugLog('html.element', nextKind);
   htmlAudio.addEventListener('loadstart', () => {
     pushDebugLog('html.loadstart', `readyState=${htmlAudio.readyState} networkState=${htmlAudio.networkState}`);
     emitDebug();
@@ -649,9 +389,6 @@ async function resolveSourceUrl() {
     if (!file) throw new Error('未选择本地音频文件');
     return URL.createObjectURL(file);
   }
-  if (isUsingDefaultRemoteSource()) {
-    return ensureDefaultAudioCached();
-  }
   return sourceConfig.value;
 }
 
@@ -699,10 +436,10 @@ function detectMobileDevice() {
 export function init() {
   pushDebugLog('init', DEFAULT_BGM_SRC);
   interactionLogCount = 0;
-  const isMobile = detectMobileDevice();
-  preferHtmlAudio = true;
-  pushDebugLog('playback.strategy', isMobile ? 'mobile-html-audio' : 'desktop-html-audio-test');
-  void ensureDefaultAudioCached();
+  preferHtmlAudio = detectMobileDevice();
+  if (preferHtmlAudio) {
+    pushDebugLog('playback.strategy', 'mobile-html-audio');
+  }
   emitState();
   if (window.__jzTodoBgmInitBound) return;
   window.__jzTodoBgmInitBound = true;
@@ -771,6 +508,7 @@ export async function play() {
         await playViaHtmlAudio();
         return;
       }
+
       const context = await resumeAudioContext();
       const audioBuffer = await decodeCurrentSource(context);
 
