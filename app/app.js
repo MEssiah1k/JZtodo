@@ -17,7 +17,7 @@ import {
   getTodosByRuleId,
   clearLocalDatabase
 } from './db.js';
-import * as bgm from './bgm.js?v=20260326-bgm-prewarm';
+import * as bgm from './bgm.js?v=20260326-bgm-reload-fix';
 import {
   initSync,
   syncNow,
@@ -4194,7 +4194,7 @@ restoreAlarmVolume();
 
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
-    navigator.serviceWorker.register('./sw.js?v=20260326-bgm-prewarm').catch(err => {
+    navigator.serviceWorker.register('./sw.js?v=20260326-bgm-reload-fix').catch(err => {
       console.error('[sw] register failed', err);
     });
   });

@@ -393,24 +393,6 @@ function resolveSourceUrl() {
   return sourceConfig.value;
 }
 
-function prewarmHtmlAudio() {
-  const audio = ensureHtmlAudio();
-  const nextSrc = resolveSourceUrl();
-  if (audio.src === nextSrc) {
-    pushDebugLog('html.prewarm.skip', 'same-src');
-    return;
-  }
-  audio.pause();
-  audio.removeAttribute('src');
-  audio.load();
-  pushDebugLog('html.prewarm.reset');
-  audio.src = nextSrc;
-  pushDebugLog('html.prewarm.src', nextSrc);
-  audio.load();
-  pushDebugLog('html.prewarm.load');
-  emitDebug();
-}
-
 async function playViaHtmlAudio() {
   const audio = ensureHtmlAudio();
   const nextSrc = resolveSourceUrl();
@@ -423,6 +405,9 @@ async function playViaHtmlAudio() {
     pushDebugLog('html.src.set', nextSrc);
     audio.load();
     pushDebugLog('html.load.call');
+  } else if (audio.readyState === 0) {
+    audio.load();
+    pushDebugLog('html.reload.before.play', `readyState=${audio.readyState} networkState=${audio.networkState}`);
   }
   audio.volume = volume;
   pushDebugLog('html.play.call');
@@ -437,13 +422,6 @@ function unlockPlayback() {
   interactionLogCount += 1;
   if (interactionLogCount === 1) {
     pushDebugLog('user.interaction', 'first');
-    if (preferHtmlAudio) {
-      try {
-        prewarmHtmlAudio();
-      } catch (error) {
-        pushDebugLog('html.prewarm.failed', summarizeError(error));
-      }
-    }
   }
   if (shouldBePlaying && playbackState === 'paused') {
     void play();
@@ -568,6 +546,11 @@ export async function play() {
       emitDebug();
     } catch (error) {
       pushDebugLog('play.failed', summarizeError(error));
+      if (!shouldBePlaying || playbackToken !== activePlaybackToken) {
+        pushDebugLog('play.interrupted', `token=${playbackToken}`);
+        emitDebug();
+        return;
+      }
       if (!forceHtmlAudioFallback && shouldFallbackToHtmlAudio(error)) {
         forceHtmlAudioFallback = true;
         pushDebugLog('fallback.enable', 'html-audio');
