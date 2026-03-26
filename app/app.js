@@ -4175,7 +4175,7 @@ restoreAlarmVolume();
 
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
-    navigator.serviceWorker.register('./sw.js?v=20260326-bgm-mobile-html-audio').catch(err => {
+    navigator.serviceWorker.register('./sw.js?v=20260326-bgm-faststart').catch(err => {
       console.error('[sw] register failed', err);
     });
   });

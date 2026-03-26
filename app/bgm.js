@@ -1,4 +1,4 @@
-const DEFAULT_BGM_SRC = new URL('../assets/bgm/pinknoise.m4a', import.meta.url).href;
+const DEFAULT_BGM_SRC = new URL('../assets/bgm/pinknoise_faststart.m4a', import.meta.url).href;
 const DEBUG_LOG_LIMIT = 50;
 const FETCH_TIMEOUT_MS = 10000;
 const READ_BODY_TIMEOUT_MS = 12000;
