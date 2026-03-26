@@ -17,7 +17,7 @@ import {
   getTodosByRuleId,
   clearLocalDatabase
 } from './db.js';
-import * as bgm from './bgm.js?v=20260326-bgm-progress-summary';
+import * as bgm from './bgm.js?v=20260326-bgm-log-version';
 import {
   initSync,
   syncNow,
@@ -31,6 +31,8 @@ import {
   upsertRemoteKv,
   insertRemoteKvIfAbsent
 } from './sync.js';
+
+const APP_BUILD_VERSION = '20260326-bgm-log-version-2';
 
 const input = document.getElementById('todo-input');
 const todoCategory = document.getElementById('todo-category');
@@ -2720,6 +2722,8 @@ function renderBgmStatus(state) {
 function renderBgmDebug(snapshot) {
   latestBgmDebugSnapshot = snapshot;
   if (!bgmLogOutput) return;
+  const isNearBottom =
+    bgmLogOutput.scrollHeight - bgmLogOutput.scrollTop - bgmLogOutput.clientHeight < 32;
   const lines = [];
   if (snapshot) {
     const logs = Array.isArray(snapshot.logs) ? snapshot.logs : [];
@@ -2761,6 +2765,7 @@ function renderBgmDebug(snapshot) {
       cacheStoreState = '进行中';
     }
 
+    lines.push(`版本号：${APP_BUILD_VERSION}`);
     lines.push(`播放状态：${snapshot.playbackState || 'unknown'}`);
     lines.push(`播放模式：${snapshot.mode || 'unknown'}`);
     lines.push(`当前来源：${sourceLabel}`);
@@ -2787,7 +2792,9 @@ function renderBgmDebug(snapshot) {
     lines.push('暂无音频资源日志');
   }
   bgmLogOutput.textContent = lines.join('\n');
-  bgmLogOutput.scrollTop = bgmLogOutput.scrollHeight;
+  if (isNearBottom) {
+    bgmLogOutput.scrollTop = bgmLogOutput.scrollHeight;
+  }
 }
 
 function triggerChangeSync() {
@@ -4231,7 +4238,7 @@ restoreAlarmVolume();
 
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
-    navigator.serviceWorker.register('./sw.js?v=20260326-bgm-progress-summary').catch(err => {
+    navigator.serviceWorker.register('./sw.js?v=20260326-bgm-log-version').catch(err => {
       console.error('[sw] register failed', err);
     });
   });
