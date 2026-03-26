@@ -2718,11 +2718,30 @@ function renderBgmDebug(snapshot) {
   if (!bgmLogOutput) return;
   const lines = [];
   if (snapshot) {
+    const sourceLabel = snapshot.source?.label || 'unknown';
+    const sourceType = snapshot.source?.type || 'unknown';
+    const configuredValue = snapshot.source?.value || '';
+    const activeMediaUrl = snapshot.htmlAudio?.src || '';
+    const htmlReadyState = Number.isFinite(snapshot.htmlAudio?.readyState) ? snapshot.htmlAudio.readyState : 'n/a';
+    const htmlNetworkState = Number.isFinite(snapshot.htmlAudio?.networkState) ? snapshot.htmlAudio.networkState : 'n/a';
+    const usingDefaultSource = sourceLabel === 'default';
+    const resourceName = configuredValue
+      ? configuredValue.split('/').pop().split('?')[0]
+      : sourceType === 'file'
+        ? '本地文件'
+        : 'unknown';
+
     lines.push(`播放状态：${snapshot.playbackState || 'unknown'}`);
     lines.push(`播放模式：${snapshot.mode || 'unknown'}`);
-    lines.push(`当前来源：${snapshot.source?.label || ''}`);
+    lines.push(`当前来源：${sourceLabel}`);
+    lines.push(`资源类型：${sourceType === 'file' ? '本地文件' : '远程地址'}`);
+    lines.push(`资源名称：${resourceName}`);
+    lines.push(`默认资源：${usingDefaultSource ? '是' : '否'}`);
+    lines.push(`配置地址：${configuredValue || '无'}`);
+    lines.push(`实际媒体地址：${activeMediaUrl || '无'}`);
     lines.push(`交互解锁：${snapshot.userInteracted ? '是' : '否'}`);
     lines.push(`音量：${Math.round((snapshot.volume || 0) * 100)}%`);
+    lines.push(`HTMLAudio状态：readyState=${htmlReadyState} networkState=${htmlNetworkState}`);
     lines.push('');
     lines.push('日志：');
     const logs = Array.isArray(snapshot.logs) ? snapshot.logs : [];
@@ -4175,7 +4194,7 @@ restoreAlarmVolume();
 
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
-    navigator.serviceWorker.register('./sw.js?v=20260326-bgm-faststart').catch(err => {
+    navigator.serviceWorker.register('./sw.js?v=20260326-bgm-mobile-mp3').catch(err => {
       console.error('[sw] register failed', err);
     });
   });
