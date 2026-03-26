@@ -17,7 +17,7 @@ import {
   getTodosByRuleId,
   clearLocalDatabase
 } from './db.js';
-import * as bgm from './bgm.js?v=20260326-bgm-local-m4a';
+import * as bgm from './bgm.js?v=20260326-bgm-downloading-state';
 import {
   initSync,
   syncNow,
@@ -2707,6 +2707,7 @@ function renderBgmStatus(state) {
   const labels = {
     stopped: '未播放',
     paused: '已暂停',
+    downloading: '下载中',
     loading: '准备播放中',
     playing: '播放中'
   };
@@ -4195,7 +4196,7 @@ restoreAlarmVolume();
 
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
-    navigator.serviceWorker.register('./sw.js?v=20260326-bgm-local-m4a').catch(err => {
+    navigator.serviceWorker.register('./sw.js?v=20260326-bgm-downloading-state').catch(err => {
       console.error('[sw] register failed', err);
     });
   });

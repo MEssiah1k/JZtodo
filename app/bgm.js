@@ -165,6 +165,9 @@ async function ensureDefaultAudioCached() {
   }
   if (defaultCacheInFlight) {
     pushDebugLog('default.cache.wait', 'inflight');
+    if (playbackState !== 'playing') {
+      setPlaybackState('downloading');
+    }
     return defaultCacheInFlight;
   }
 
@@ -182,6 +185,9 @@ async function ensureDefaultAudioCached() {
       }
 
       pushDebugLog('default.cache.miss', DEFAULT_BGM_SRC);
+      if (playbackState !== 'playing') {
+        setPlaybackState('downloading');
+      }
       pushDebugLog('default.cache.fetch.start', DEFAULT_BGM_SRC);
       const response = await fetch(DEFAULT_BGM_SRC, { cache: 'no-store' });
       pushDebugLog('default.cache.fetch.done', `ok=${response.ok} status=${response.status}`);
