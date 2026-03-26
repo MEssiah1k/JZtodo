@@ -1,5 +1,6 @@
 const DEFAULT_BGM_SRC = new URL('../assets/bgm/pinknoise.m4a', import.meta.url).href;
 const DEBUG_LOG_LIMIT = 50;
+const FETCH_TIMEOUT_MS = 10000;
 const DECODE_TIMEOUT_MS = 8000;
 
 let audioContext = null;
@@ -14,6 +15,7 @@ let sourceConfig = { type: 'url', value: DEFAULT_BGM_SRC, label: 'default' };
 let activePlaybackToken = 0;
 let inflightPlayPromise = null;
 let forceHtmlAudioFallback = false;
+let interactionLogCount = 0;
 
 const stateListeners = new Set();
 const debugListeners = new Set();
@@ -35,7 +37,12 @@ function shouldFallbackToHtmlAudio(error) {
     message.includes('decode') ||
     message.includes('解码') ||
     message.includes('encoding') ||
-    message.includes('media')
+    message.includes('media') ||
+    message.includes('fetch') ||
+    message.includes('network') ||
+    message.includes('timeout') ||
+    message.includes('failed to fetch') ||
+    message.includes('abort')
   );
 }
 
@@ -149,12 +156,27 @@ async function readSourceArrayBuffer() {
     return file.arrayBuffer();
   }
   pushDebugLog('source.fetch.start', sourceConfig.value);
-  const response = await fetch(sourceConfig.value, { cache: 'no-store' });
-  pushDebugLog('source.fetch.done', `ok=${response.ok} status=${response.status}`);
-  if (!response.ok) {
-    throw new Error(`音频请求失败: ${response.status}`);
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => {
+    controller.abort(new Error(`音频请求超时（${FETCH_TIMEOUT_MS}ms）`));
+  }, FETCH_TIMEOUT_MS);
+
+  try {
+    const response = await fetch(sourceConfig.value, {
+      cache: 'no-store',
+      signal: controller.signal
+    });
+    pushDebugLog('source.fetch.done', `ok=${response.ok} status=${response.status}`);
+    if (!response.ok) {
+      throw new Error(`音频请求失败: ${response.status}`);
+    }
+    return response.arrayBuffer();
+  } catch (error) {
+    pushDebugLog('source.fetch.failed', summarizeError(error));
+    throw error;
+  } finally {
+    clearTimeout(timeoutId);
   }
-  return response.arrayBuffer();
 }
 
 async function decodeCurrentSource(context) {
@@ -321,7 +343,10 @@ async function playViaHtmlAudio() {
 
 function unlockPlayback() {
   userInteracted = true;
-  pushDebugLog('user.interaction');
+  interactionLogCount += 1;
+  if (interactionLogCount === 1) {
+    pushDebugLog('user.interaction', 'first');
+  }
   if (shouldBePlaying && playbackState === 'paused') {
     void play();
   }
@@ -329,6 +354,7 @@ function unlockPlayback() {
 
 export function init() {
   pushDebugLog('init', DEFAULT_BGM_SRC);
+  interactionLogCount = 0;
   emitState();
   if (window.__jzTodoBgmInitBound) return;
   window.__jzTodoBgmInitBound = true;
