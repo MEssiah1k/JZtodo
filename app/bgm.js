@@ -1,7 +1,5 @@
-import { getMeta, setMeta } from './db.js';
-
 const DEFAULT_BGM_SRC = new URL('../assets/bgm/pinknoise_faststart.m4a', import.meta.url).href;
-const DEFAULT_BGM_CACHE_KEY = 'bgm.defaultAudioCache.v2';
+const DEFAULT_BGM_CACHE_NAME = 'jztodo-default-bgm-cache-v1';
 const DEBUG_LOG_LIMIT = 50;
 const FETCH_TIMEOUT_MS = 10000;
 const READ_BODY_TIMEOUT_MS = 12000;
@@ -229,6 +227,57 @@ function setDefaultCachedBlobUrl(blob, origin = 'cache') {
   return defaultCachedBlobUrl;
 }
 
+function downloadDefaultAudioBlobWithProgress(url) {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    const startedAt = Date.now();
+    let lastProgressLogAt = 0;
+
+    const logProgress = (loaded, total) => {
+      const now = Date.now();
+      if (now - lastProgressLogAt < 1000) return;
+      lastProgressLogAt = now;
+      const elapsedSec = Math.max(0, Math.floor((now - startedAt) / 1000));
+      if (Number.isFinite(total) && total > 0) {
+        const percent = ((loaded / total) * 100).toFixed(1);
+        pushDebugLog(
+          'default.cache.blob.progress',
+          `${elapsedSec}s ${formatBytes(loaded)}/${formatBytes(total)} ${percent}%`
+        );
+      } else {
+        pushDebugLog('default.cache.blob.progress', `${elapsedSec}s ${formatBytes(loaded)}`);
+      }
+    };
+
+    xhr.open('GET', url, true);
+    xhr.responseType = 'blob';
+    xhr.timeout = DEFAULT_CACHE_BLOB_TIMEOUT_MS;
+
+    xhr.onloadstart = () => {
+      pushDebugLog('default.cache.blob.start');
+    };
+
+    xhr.onprogress = event => {
+      logProgress(event.loaded || 0, event.lengthComputable ? event.total : 0);
+    };
+
+    xhr.onload = () => {
+      const status = xhr.status || 0;
+      if (status >= 200 && status < 300 && xhr.response instanceof Blob) {
+        logProgress(xhr.response.size || 0, xhr.response.size || 0);
+        resolve(xhr.response);
+        return;
+      }
+      reject(new Error(`default.cache.blob.http ${status}`));
+    };
+
+    xhr.onerror = () => reject(new Error('default.cache.blob.network'));
+    xhr.onabort = () => reject(new Error('default.cache.blob.abort'));
+    xhr.ontimeout = () => reject(new Error(`default.cache.blob.timeout ${DEFAULT_CACHE_BLOB_TIMEOUT_MS}ms`));
+    xhr.send();
+  });
+}
+
 async function ensureDefaultAudioCached() {
   if (!isUsingDefaultRemoteSource()) return sourceConfig.value;
   if (defaultCachedBlobUrl) {
@@ -245,15 +294,19 @@ async function ensureDefaultAudioCached() {
 
   defaultCacheInFlight = (async () => {
     try {
-      const cachedRecord = await getMeta(DEFAULT_BGM_CACHE_KEY);
-      const cachedValue = cachedRecord?.value;
-      if (
-        cachedValue &&
-        cachedValue.src === DEFAULT_BGM_SRC &&
-        cachedValue.blob instanceof Blob
-      ) {
-        pushDebugLog('default.cache.hit', 'indexeddb');
-        return setDefaultCachedBlobUrl(cachedValue.blob, 'indexeddb');
+      if (!('caches' in window)) {
+        pushDebugLog('default.cache.unsupported', 'cache-storage');
+        return sourceConfig.value;
+      }
+
+      const cache = await caches.open(DEFAULT_BGM_CACHE_NAME);
+      const cachedResponse = await cache.match(DEFAULT_BGM_SRC);
+      if (cachedResponse) {
+        pushDebugLog('default.cache.hit', 'cache-storage');
+        pushDebugLog('default.cache.blob.start', 'cache-storage');
+        const cachedBlob = await cachedResponse.blob();
+        pushDebugLog('default.cache.blob.done', `${cachedBlob.size} bytes ${cachedBlob.type || 'unknown'}`);
+        return setDefaultCachedBlobUrl(cachedBlob, 'cache-storage');
       }
 
       pushDebugLog('default.cache.miss', DEFAULT_BGM_SRC);
@@ -261,31 +314,21 @@ async function ensureDefaultAudioCached() {
         setPlaybackState('downloading');
       }
       pushDebugLog('default.cache.fetch.start', DEFAULT_BGM_SRC);
-      const response = await fetch(DEFAULT_BGM_SRC, { cache: 'no-store' });
-      pushDebugLog('default.cache.fetch.done', `ok=${response.ok} status=${response.status}`);
-      if (!response.ok) {
-        throw new Error(`默认音频下载失败: ${response.status}`);
-      }
-      pushDebugLog('default.cache.blob.start');
-      const blob = await Promise.race([
-        readResponseBlobWithProgress(response),
-        new Promise((_, reject) => {
-          setTimeout(() => {
-            reject(new Error(`default.cache.blob.timeout ${DEFAULT_CACHE_BLOB_TIMEOUT_MS}ms`));
-          }, DEFAULT_CACHE_BLOB_TIMEOUT_MS);
-        })
-      ]);
+      const blob = await downloadDefaultAudioBlobWithProgress(DEFAULT_BGM_SRC);
+      pushDebugLog('default.cache.fetch.done', `ok=true status=200`);
       pushDebugLog('default.cache.blob.done', `${blob.size} bytes ${blob.type || 'unknown'}`);
       try {
         pushDebugLog('default.cache.store.start', `${blob.size} bytes`);
         await Promise.race([
-          setMeta(DEFAULT_BGM_CACHE_KEY, {
-            src: DEFAULT_BGM_SRC,
-            blob,
-            size: blob.size,
-            type: blob.type || '',
-            cachedAt: new Date().toISOString()
-          }),
+          cache.put(
+            DEFAULT_BGM_SRC,
+            new Response(blob, {
+              headers: {
+                'content-type': blob.type || 'application/octet-stream',
+                'content-length': String(blob.size || 0)
+              }
+            })
+          ),
           new Promise((_, reject) => {
             setTimeout(() => {
               reject(new Error(`default.cache.store.timeout ${DEFAULT_CACHE_STORE_TIMEOUT_MS}ms`));
