@@ -17,6 +17,7 @@ let activePlaybackToken = 0;
 let inflightPlayPromise = null;
 let forceHtmlAudioFallback = false;
 let interactionLogCount = 0;
+let preferHtmlAudio = false;
 
 const stateListeners = new Set();
 const debugListeners = new Set();
@@ -102,7 +103,7 @@ function getDebugSnapshot() {
           networkState: htmlAudio.networkState
         }
       : null,
-    mode: forceHtmlAudioFallback ? 'html-audio' : 'web-audio',
+    mode: (forceHtmlAudioFallback || preferHtmlAudio) ? 'html-audio' : 'web-audio',
     logs: [...debugLogs]
   };
 }
@@ -395,9 +396,19 @@ function unlockPlayback() {
   }
 }
 
+function detectMobileDevice() {
+  if (typeof navigator === 'undefined') return false;
+  const ua = navigator.userAgent || '';
+  return /Android|iPhone|iPad|iPod|Mobile|HarmonyOS|Windows Phone/i.test(ua);
+}
+
 export function init() {
   pushDebugLog('init', DEFAULT_BGM_SRC);
   interactionLogCount = 0;
+  preferHtmlAudio = detectMobileDevice();
+  if (preferHtmlAudio) {
+    pushDebugLog('playback.strategy', 'mobile-html-audio');
+  }
   emitState();
   if (window.__jzTodoBgmInitBound) return;
   window.__jzTodoBgmInitBound = true;
@@ -459,7 +470,10 @@ export async function play() {
   pushDebugLog('play.call', `token=${playbackToken} interacted=${userInteracted}`);
   inflightPlayPromise = (async () => {
     try {
-      if (forceHtmlAudioFallback) {
+      if (forceHtmlAudioFallback || preferHtmlAudio) {
+        if (preferHtmlAudio && !forceHtmlAudioFallback) {
+          pushDebugLog('play.strategy.use', 'html-audio');
+        }
         await playViaHtmlAudio();
         return;
       }
