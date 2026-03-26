@@ -17,7 +17,7 @@ import {
   getTodosByRuleId,
   clearLocalDatabase
 } from './db.js';
-import * as bgm from './bgm.js?v=20260326-bgm-cache-storage';
+import * as bgm from './bgm.js?v=20260326-bgm-progress-summary';
 import {
   initSync,
   syncNow,
@@ -2722,6 +2722,7 @@ function renderBgmDebug(snapshot) {
   if (!bgmLogOutput) return;
   const lines = [];
   if (snapshot) {
+    const logs = Array.isArray(snapshot.logs) ? snapshot.logs : [];
     const sourceLabel = snapshot.source?.label || 'unknown';
     const sourceType = snapshot.source?.type || 'unknown';
     const configuredValue = snapshot.source?.value || '';
@@ -2734,6 +2735,31 @@ function renderBgmDebug(snapshot) {
       : sourceType === 'file'
         ? '本地文件'
         : 'unknown';
+    const lastProgressLine = [...logs].reverse().find(line => line.includes('default.cache.blob.progress')) || '';
+    const lastProgressValue = lastProgressLine.includes(' | ')
+      ? lastProgressLine.split(' | ').slice(1).join(' | ')
+      : '无';
+    let cacheStage = '未开始';
+    let cacheStoreState = '未开始';
+    if (logs.some(line => line.includes('default.cache.failed'))) {
+      cacheStage = '失败';
+    } else if (logs.some(line => line.includes('default.cache.blob.ready'))) {
+      cacheStage = '已就绪';
+    } else if (logs.some(line => line.includes('default.cache.store.start'))) {
+      cacheStage = '写入本地缓存中';
+    } else if (logs.some(line => line.includes('default.cache.blob.start'))) {
+      cacheStage = '下载中';
+    } else if (logs.some(line => line.includes('default.cache.hit'))) {
+      cacheStage = '已命中缓存';
+    }
+
+    if (logs.some(line => line.includes('default.cache.store.failed'))) {
+      cacheStoreState = '失败';
+    } else if (logs.some(line => line.includes('default.cache.store.done'))) {
+      cacheStoreState = '完成';
+    } else if (logs.some(line => line.includes('default.cache.store.start'))) {
+      cacheStoreState = '进行中';
+    }
 
     lines.push(`播放状态：${snapshot.playbackState || 'unknown'}`);
     lines.push(`播放模式：${snapshot.mode || 'unknown'}`);
@@ -2747,9 +2773,11 @@ function renderBgmDebug(snapshot) {
     lines.push(`交互解锁：${snapshot.userInteracted ? '是' : '否'}`);
     lines.push(`音量：${Math.round((snapshot.volume || 0) * 100)}%`);
     lines.push(`HTMLAudio状态：readyState=${htmlReadyState} networkState=${htmlNetworkState}`);
+    lines.push(`缓存阶段：${cacheStage}`);
+    lines.push(`下载进度：${lastProgressValue}`);
+    lines.push(`写入缓存：${cacheStoreState}`);
     lines.push('');
     lines.push('日志：');
-    const logs = Array.isArray(snapshot.logs) ? snapshot.logs : [];
     if (logs.length) {
       lines.push(...logs);
     } else {
@@ -4203,7 +4231,7 @@ restoreAlarmVolume();
 
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
-    navigator.serviceWorker.register('./sw.js?v=20260326-bgm-cache-storage').catch(err => {
+    navigator.serviceWorker.register('./sw.js?v=20260326-bgm-progress-summary').catch(err => {
       console.error('[sw] register failed', err);
     });
   });
