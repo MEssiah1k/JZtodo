@@ -17,7 +17,7 @@ import {
   getTodosByRuleId,
   clearLocalDatabase
 } from './db.js';
-import * as bgm from './bgm.js?v=20260326-bgm-log-version';
+import * as bgm from './bgm.js?v=20260326-bgm-unlock-timer';
 import {
   initSync,
   syncNow,
@@ -32,7 +32,7 @@ import {
   insertRemoteKvIfAbsent
 } from './sync.js';
 
-const APP_BUILD_VERSION = '20260326-bgm-log-version-2';
+const APP_BUILD_VERSION = '20260326-bgm-unlock-timer';
 
 const input = document.getElementById('todo-input');
 const todoCategory = document.getElementById('todo-category');
@@ -3803,7 +3803,6 @@ if (timerMinutesInput) {
 
 if (timerToggleBtn) {
   timerToggleBtn.addEventListener('click', () => {
-    if (currentBgmPlaybackState === 'downloading') return;
     if (timerRunning) pauseTimer();
     else startTimer();
   });
@@ -4144,9 +4143,6 @@ if (timelineEditSaveBtn) {
 
 function updateToggleLabel() {
   if (!timerToggleBtn) return;
-  const bgmDownloading = currentBgmPlaybackState === 'downloading';
-  timerToggleBtn.disabled = bgmDownloading;
-  timerToggleBtn.setAttribute('aria-disabled', bgmDownloading ? 'true' : 'false');
   if (timerRunning) {
     timerToggleBtn.textContent = '暂停';
     return;
@@ -4238,7 +4234,7 @@ restoreAlarmVolume();
 
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
-    navigator.serviceWorker.register('./sw.js?v=20260326-bgm-log-version').catch(err => {
+    navigator.serviceWorker.register('./sw.js?v=20260326-bgm-unlock-timer').catch(err => {
       console.error('[sw] register failed', err);
     });
   });

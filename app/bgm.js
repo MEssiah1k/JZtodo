@@ -662,11 +662,10 @@ function detectMobileDevice() {
 export function init() {
   pushDebugLog('init', DEFAULT_BGM_SRC);
   interactionLogCount = 0;
-  preferHtmlAudio = detectMobileDevice();
-  if (preferHtmlAudio) {
-    pushDebugLog('playback.strategy', 'mobile-html-audio');
-    void ensureDefaultAudioCached();
-  }
+  const isMobile = detectMobileDevice();
+  preferHtmlAudio = true;
+  pushDebugLog('playback.strategy', isMobile ? 'mobile-html-audio' : 'desktop-html-audio-test');
+  void ensureDefaultAudioCached();
   emitState();
   if (window.__jzTodoBgmInitBound) return;
   window.__jzTodoBgmInitBound = true;
