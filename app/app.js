@@ -3808,6 +3808,18 @@ function setSyncStatus(text) {
   syncStatus.textContent = text;
 }
 
+function summarizeAppError(error) {
+  const message = String(
+    (error && error.message) ||
+    (error && error.details) ||
+    (error && error.hint) ||
+    error ||
+    ''
+  ).trim();
+  if (!message) return 'unknown';
+  return message.replace(/\s+/g, ' ').slice(0, 160);
+}
+
 const initPromise = initSync({
   onStatus: setSyncStatus,
   onUpdate: updatedDates => {
@@ -3916,7 +3928,7 @@ if (syncClearBtn) {
       setSyncStatus('数据已清空，正在刷新...');
       window.location.reload();
     } catch (err) {
-      setSyncStatus('清空失败');
+      setSyncStatus(`清空失败：${summarizeAppError(err)}`);
       console.error('[sync] clear all data error', err);
     }
   });
@@ -4066,6 +4078,7 @@ async function restoreTimerState() {
   timerDurationMs = value.durationMs;
   timerRemainingMs = value.remainingMs;
   timerRunning = false;
+  timerHasStartedWorkSession = false;
   timerStartAt = Date.now();
   setTimerMode(value.mode);
   if (timerMinutesInput) timerMinutesInput.value = Math.floor(timerDurationMs / 60000);
@@ -4083,8 +4096,16 @@ async function restoreTimerState() {
     };
   }
 
-  if (value.running && value.startAt) {
-    setTimerStatus(value.mode === 'rest' ? '休息已暂停，请手动恢复' : '倒计时已暂停，请手动恢复');
+  if (
+    value.running ||
+    timerRemainingMs < timerDurationMs ||
+    (activeTimerSegment && (activeTimerSegment.state === 'running' || activeTimerSegment.state === 'paused'))
+  ) {
+    timerHasStartedWorkSession = true;
+  }
+
+  if (timerHasStartedWorkSession) {
+    setTimerStatus(value.mode === 'rest' ? '休息已暂停，可继续或结束' : '倒计时已暂停，可继续或结束');
   }
 
   updateTimerUI(timerRemainingMs);
