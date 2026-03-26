@@ -1830,6 +1830,14 @@ function renderTimerTimeline() {
       button.addEventListener('focus', () => showTooltip(button, tooltipText));
       button.addEventListener('mouseleave', hideTooltip);
       button.addEventListener('blur', hideTooltip);
+      if (segment.state !== 'running') {
+        button.addEventListener('click', event => {
+          event.preventDefault();
+          event.stopPropagation();
+          hideTooltip();
+          showActionPopover(lane, segment);
+        });
+      }
       lane.appendChild(button);
     });
   });
