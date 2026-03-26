@@ -566,6 +566,40 @@ h2 {
   font-size: 15px;
 }
 
+.clear-log-card {
+  width: min(760px, 94vw);
+}
+
+.clear-log-output {
+  margin: 12px 0 0;
+  padding: 12px;
+  min-height: 220px;
+  max-height: min(58vh, 520px);
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: #fffaf6;
+  color: var(--text);
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.clear-log-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 12px;
+}
+
+.progress-btn.clear-log-copy {
+  opacity: 1;
+  pointer-events: auto;
+  min-width: 88px;
+  padding: 8px 14px;
+  border-radius: 8px;
+}
+
 #prompt-cancel.modal-close {
   min-width: 72px;
   padding: 10px 20px;

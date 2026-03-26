@@ -68,6 +68,10 @@ const promptModal = document.getElementById('prompt-modal');
 const promptMessage = document.getElementById('prompt-message');
 const promptCancelBtn = document.getElementById('prompt-cancel');
 const promptConfirmBtn = document.getElementById('prompt-confirm');
+const clearLogModal = document.getElementById('clear-log-modal');
+const clearLogCloseBtn = document.getElementById('clear-log-close');
+const clearLogCopyBtn = document.getElementById('clear-log-copy');
+const clearLogOutput = document.getElementById('clear-log-output');
 const dailySettlementModal = document.getElementById('daily-settlement-modal');
 const dailySettlementBody = document.getElementById('daily-settlement-body');
 const dailySettlementCloseBtn = document.getElementById('daily-settlement-close');
@@ -2695,6 +2699,7 @@ let syncInitPromise = null;
 let pendingChangeSync = false;
 let changeSyncInFlight = null;
 let changeSyncQueued = false;
+let clearDataLogLines = [];
 restoreInProgressPromise = restoreInProgressTodos();
 ensureRunningTicker();
 
@@ -3820,6 +3825,33 @@ function summarizeAppError(error) {
   return message.replace(/\s+/g, ' ').slice(0, 160);
 }
 
+function appendClearDataLog(message) {
+  const now = new Date();
+  const hh = String(now.getHours()).padStart(2, '0');
+  const mm = String(now.getMinutes()).padStart(2, '0');
+  const ss = String(now.getSeconds()).padStart(2, '0');
+  clearDataLogLines.push(`[${hh}:${mm}:${ss}] ${message}`);
+  if (clearLogOutput) {
+    clearLogOutput.textContent = clearDataLogLines.join('\n');
+    clearLogOutput.scrollTop = clearLogOutput.scrollHeight;
+  }
+}
+
+function resetClearDataLog() {
+  clearDataLogLines = [];
+  if (clearLogOutput) clearLogOutput.textContent = '';
+}
+
+function openClearLogModal() {
+  if (!clearLogModal) return;
+  clearLogModal.classList.remove('hidden');
+}
+
+function closeClearLogModal() {
+  if (!clearLogModal) return;
+  clearLogModal.classList.add('hidden');
+}
+
 const initPromise = initSync({
   onStatus: setSyncStatus,
   onUpdate: updatedDates => {
@@ -3894,17 +3926,28 @@ if (syncClearBtn) {
     if (!confirmed) return;
 
     try {
+      resetClearDataLog();
+      openClearLogModal();
+      appendClearDataLog('开始执行清空数据');
       setSyncStatus('正在清空数据...');
       if (syncReady) {
+        appendClearDataLog('开始清空云端数据');
         const cleared = await clearAllRemoteData();
         if (!cleared) {
+          appendClearDataLog('云端清空失败：同步未初始化');
           setSyncStatus('清空失败：同步未初始化');
           return;
         }
+        appendClearDataLog('云端数据已清空');
+      } else {
+        appendClearDataLog('跳过云端清空：当前同步未初始化');
       }
 
+      appendClearDataLog('开始清空本地数据库');
       await clearLocalDatabase();
+      appendClearDataLog('本地数据库已清空');
 
+      appendClearDataLog('开始清理本地缓存键');
       [
         TIMER_STATE_LOCAL_KEY,
         TIMER_TIMELINE_LOCAL_KEY,
@@ -3914,21 +3957,26 @@ if (syncClearBtn) {
       ].forEach(key => {
         try {
           window.localStorage.removeItem(key);
+          appendClearDataLog(`已清理 localStorage：${key}`);
         } catch (_) {
-          // 忽略本地存储清理失败
+          appendClearDataLog(`清理 localStorage 失败：${key}`);
         }
       });
 
       try {
         window.sessionStorage.removeItem('jztodo.sw.cleaned');
+        appendClearDataLog('已清理 sessionStorage：jztodo.sw.cleaned');
       } catch (_) {
-        // 忽略会话存储清理失败
+        appendClearDataLog('清理 sessionStorage 失败：jztodo.sw.cleaned');
       }
 
+      appendClearDataLog('清空完成，准备刷新页面');
       setSyncStatus('数据已清空，正在刷新...');
       window.location.reload();
     } catch (err) {
-      setSyncStatus(`清空失败：${summarizeAppError(err)}`);
+      const detail = summarizeAppError(err);
+      appendClearDataLog(`清空失败：${detail}`);
+      setSyncStatus(`清空失败：${detail}`);
       console.error('[sync] clear all data error', err);
     }
   });
@@ -3979,6 +4027,29 @@ if (promptCancelBtn) {
 if (promptConfirmBtn) {
   promptConfirmBtn.addEventListener('click', () => {
     resolvePrompt(true);
+  });
+}
+
+if (clearLogCloseBtn) {
+  clearLogCloseBtn.addEventListener('click', closeClearLogModal);
+}
+
+if (clearLogModal) {
+  clearLogModal.addEventListener('click', event => {
+    if (event.target === clearLogModal) closeClearLogModal();
+  });
+}
+
+if (clearLogCopyBtn) {
+  clearLogCopyBtn.addEventListener('click', async () => {
+    const text = clearDataLogLines.join('\n');
+    if (!text) return;
+    try {
+      await navigator.clipboard.writeText(text);
+      appendClearDataLog('日志已复制到剪贴板');
+    } catch (error) {
+      appendClearDataLog(`复制日志失败：${summarizeAppError(error)}`);
+    }
   });
 }
 
