@@ -17,7 +17,7 @@ import {
   getTodosByRuleId,
   clearLocalDatabase
 } from './db.js';
-import * as bgm from './bgm.js?v=20260326-bgm-cache-stage-log';
+import * as bgm from './bgm.js?v=20260326-bgm-download-progress';
 import {
   initSync,
   syncNow,
@@ -4203,7 +4203,7 @@ restoreAlarmVolume();
 
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
-    navigator.serviceWorker.register('./sw.js?v=20260326-bgm-cache-stage-log').catch(err => {
+    navigator.serviceWorker.register('./sw.js?v=20260326-bgm-download-progress').catch(err => {
       console.error('[sw] register failed', err);
     });
   });

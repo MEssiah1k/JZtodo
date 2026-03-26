@@ -6,7 +6,7 @@ const DEBUG_LOG_LIMIT = 50;
 const FETCH_TIMEOUT_MS = 10000;
 const READ_BODY_TIMEOUT_MS = 12000;
 const DECODE_TIMEOUT_MS = 8000;
-const DEFAULT_CACHE_BLOB_TIMEOUT_MS = 30000;
+const DEFAULT_CACHE_BLOB_TIMEOUT_MS = 600000;
 const DEFAULT_CACHE_STORE_TIMEOUT_MS = 15000;
 
 let audioContext = null;
@@ -137,6 +137,76 @@ function emitDebug() {
   });
 }
 
+function formatBytes(bytes) {
+  if (!Number.isFinite(bytes) || bytes <= 0) return '0B';
+  const units = ['B', 'KB', 'MB', 'GB'];
+  let value = bytes;
+  let unitIndex = 0;
+  while (value >= 1024 && unitIndex < units.length - 1) {
+    value /= 1024;
+    unitIndex += 1;
+  }
+  const digits = unitIndex === 0 ? 0 : value >= 100 ? 0 : value >= 10 ? 1 : 2;
+  return `${value.toFixed(digits)}${units[unitIndex]}`;
+}
+
+async function readResponseBlobWithProgress(response) {
+  const totalBytesHeader = Number(response.headers.get('content-length') || 0);
+  const totalBytes = Number.isFinite(totalBytesHeader) && totalBytesHeader > 0
+    ? totalBytesHeader
+    : 0;
+  const startedAt = Date.now();
+  let loadedBytes = 0;
+  let progressTimerId = null;
+
+  const logProgress = () => {
+    const elapsedSec = Math.max(0, Math.floor((Date.now() - startedAt) / 1000));
+    if (totalBytes > 0) {
+      const percent = ((loadedBytes / totalBytes) * 100).toFixed(1);
+      pushDebugLog(
+        'default.cache.blob.progress',
+        `${elapsedSec}s ${formatBytes(loadedBytes)}/${formatBytes(totalBytes)} ${percent}%`
+      );
+    } else {
+      pushDebugLog(
+        'default.cache.blob.progress',
+        `${elapsedSec}s ${formatBytes(loadedBytes)}`
+      );
+    }
+  };
+
+  try {
+    progressTimerId = window.setInterval(logProgress, 1000);
+    if (!response.body || typeof response.body.getReader !== 'function') {
+      const blob = await response.blob();
+      loadedBytes = blob.size || loadedBytes;
+      logProgress();
+      return blob;
+    }
+
+    const reader = response.body.getReader();
+    const chunks = [];
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (value) {
+        chunks.push(value);
+        loadedBytes += value.byteLength;
+      }
+    }
+
+    logProgress();
+    return new Blob(chunks, {
+      type: response.headers.get('content-type') || 'application/octet-stream'
+    });
+  } finally {
+    if (progressTimerId !== null) {
+      window.clearInterval(progressTimerId);
+    }
+  }
+}
+
 function isUsingDefaultRemoteSource() {
   return (
     sourceConfig.type === 'url' &&
@@ -198,7 +268,7 @@ async function ensureDefaultAudioCached() {
       }
       pushDebugLog('default.cache.blob.start');
       const blob = await Promise.race([
-        response.blob(),
+        readResponseBlobWithProgress(response),
         new Promise((_, reject) => {
           setTimeout(() => {
             reject(new Error(`default.cache.blob.timeout ${DEFAULT_CACHE_BLOB_TIMEOUT_MS}ms`));
