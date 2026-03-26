@@ -1,17 +1,16 @@
-const CACHE_NAME = 'jztodo-timer-cache-v61';
+const CACHE_NAME = 'jztodo-timer-cache-v62';
 const CACHE_PREFIX = 'jztodo-timer-cache-';
 const CORE_ASSETS = [
   './',
   './index.html',
   './style.light.css?v=20260325-mobile-heatmap-scroll-nav',
-  './app/app.js?v=20260326-bgm-html-reset',
+  './app/app.js?v=20260326-bgm-sw-bypass',
   './app/db.js?v=20260325-pwa-restore',
   './app/sync.js?v=20260325-pwa-restore',
   './app/manifest.json?v=20260325-pwa-restore',
-  './app/bgm.js?v=20260326-bgm-html-reset',
-  './assets/bgm/pinknoise_mobile.mp3',
+  './app/bgm.js?v=20260326-bgm-sw-bypass',
   './app/icon.svg?v=2',
-  './sw.js?v=20260326-bgm-html-reset'
+  './sw.js?v=20260326-bgm-sw-bypass'
 ];
 
 self.addEventListener('install', event => {
@@ -66,6 +65,10 @@ self.addEventListener('fetch', event => {
   if (event.request.method !== 'GET') return;
   const requestUrl = new URL(event.request.url);
   if (requestUrl.origin !== self.location.origin) return;
+  if (requestUrl.pathname.includes('/assets/bgm/')) {
+    event.respondWith(fetch(event.request));
+    return;
+  }
   if (event.request.headers.has('range')) {
     event.respondWith(fetch(event.request));
     return;
