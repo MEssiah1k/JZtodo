@@ -6,6 +6,8 @@ const DEBUG_LOG_LIMIT = 50;
 const FETCH_TIMEOUT_MS = 10000;
 const READ_BODY_TIMEOUT_MS = 12000;
 const DECODE_TIMEOUT_MS = 8000;
+const DEFAULT_CACHE_BLOB_TIMEOUT_MS = 30000;
+const DEFAULT_CACHE_STORE_TIMEOUT_MS = 15000;
 
 let audioContext = null;
 let currentSourceNode = null;
@@ -194,16 +196,32 @@ async function ensureDefaultAudioCached() {
       if (!response.ok) {
         throw new Error(`默认音频下载失败: ${response.status}`);
       }
-      const blob = await response.blob();
+      pushDebugLog('default.cache.blob.start');
+      const blob = await Promise.race([
+        response.blob(),
+        new Promise((_, reject) => {
+          setTimeout(() => {
+            reject(new Error(`default.cache.blob.timeout ${DEFAULT_CACHE_BLOB_TIMEOUT_MS}ms`));
+          }, DEFAULT_CACHE_BLOB_TIMEOUT_MS);
+        })
+      ]);
       pushDebugLog('default.cache.blob.done', `${blob.size} bytes ${blob.type || 'unknown'}`);
       try {
-        await setMeta(DEFAULT_BGM_CACHE_KEY, {
-          src: DEFAULT_BGM_SRC,
-          blob,
-          size: blob.size,
-          type: blob.type || '',
-          cachedAt: new Date().toISOString()
-        });
+        pushDebugLog('default.cache.store.start', `${blob.size} bytes`);
+        await Promise.race([
+          setMeta(DEFAULT_BGM_CACHE_KEY, {
+            src: DEFAULT_BGM_SRC,
+            blob,
+            size: blob.size,
+            type: blob.type || '',
+            cachedAt: new Date().toISOString()
+          }),
+          new Promise((_, reject) => {
+            setTimeout(() => {
+              reject(new Error(`default.cache.store.timeout ${DEFAULT_CACHE_STORE_TIMEOUT_MS}ms`));
+            }, DEFAULT_CACHE_STORE_TIMEOUT_MS);
+          })
+        ]);
         pushDebugLog('default.cache.store.done', `${blob.size} bytes`);
       } catch (storeError) {
         pushDebugLog('default.cache.store.failed', summarizeError(storeError));
